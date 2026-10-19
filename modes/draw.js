@@ -19,6 +19,7 @@
 //    labelSuffix(hand)    text shown after "Left"/"Right"
 //    badge()              { text, tone } for the top-left status badge
 //    onKey(e)             return true if the key was handled
+//    onKeyUp(e)           (optional) a key was released
 // =============================================================================
 
 import { MIDDLE_MCP, dist, handSize, isOpenPalm, classifyDrawPose, Debouncer } from "../gestures.js";

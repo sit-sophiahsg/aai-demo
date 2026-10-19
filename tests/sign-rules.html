@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Rules Tests</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #0b0d12; color: #e6e9f2; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+    h1 { font: 700 18px system-ui, sans-serif; margin: 0 0 8px; }
+    .pass { color: #a3e635; } .fail { color: #f87171; } .muted { color: #8b93a7; }
+  </style>
+</head>
+<body>
+  <h1>Sign mode: rule classifier tests (synthetic hands)</h1>
+  <p class="muted">Idealised hand poses, so this checks the logic of the rules, not real-world accuracy.</p>
+  <pre id="out">Running…</pre>
+  <script type="module">
+    import { makeFeatures, computeFeatures } from "../sign/features.js";
+    import { CFG, RULE_LETTERS, scoreLetters } from "../sign/rules.js";
+    import { SHAPES, ORIENT, REJECTS, rotate, toPx, noisy } from "./synthetic-hands.js";
+
+    const lines = [];
+    const log = (s, cls = "") => {
+      lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+      console.log("TEST " + s);
+    };
+
+    function classify(pts) {
+      const f = makeFeatures(), s = {};
+      computeFeatures(pts, f);
+      scoreLetters(f, s);
+      const r = Object.entries(s).sort((a, b) => b[1] - a[1]);
+      return { got: r[0][1] >= CFG.minConfidence ? r[0][0] : "-", conf: r[0][1], scores: s };
+    }
+
+    try {
+      // 1) Clean poses: each letter upright/natural, tilted ±20°, normal + mirrored.
+      let pass = 0, fail = 0;
+      const summary = [];
+      for (const L of RULE_LETTERS) {
+        let minConf = 1, minMargin = 1, rival = "", fails = [];
+        for (const tilt of [0, -20, 20]) for (const mirror of [false, true]) {
+          const r = classify(toPx(rotate(SHAPES[L], (ORIENT[L] || 0) + tilt), { mirror }));
+          const other = Object.entries(r.scores).filter(([k]) => k !== L).sort((a, b) => b[1] - a[1])[0];
+          const margin = r.scores[L] - other[1];
+          minConf = Math.min(minConf, r.scores[L]);
+          if (margin < minMargin) { minMargin = margin; rival = other[0]; }
+          if (r.got === L) pass++; else { fail++; fails.push(`tilt ${tilt}${mirror ? " mirrored" : ""} -> ${r.got}`); }
+        }
+        summary.push({ L, minConf, minMargin, rival });
+        log(`${fails.length ? "FAIL" : "PASS"} ${L}: min conf ${Math.round(minConf * 100)}%, min margin ${Math.round(minMargin * 100)} (closest rival ${rival})${fails.length ? " | " + fails.join("; ") : ""}`, fails.length ? "fail" : "pass");
+      }
+      for (const [name, pts] of Object.entries(REJECTS)) for (const mirror of [false, true]) {
+        const r = classify(toPx(pts, { mirror }));
+        const ok = r.got === "-";
+        ok ? pass++ : fail++;
+        log(`${ok ? "PASS" : "FAIL"} reject ${name}${mirror ? " (mirrored)" : ""} -> ${r.got} ${Math.round(r.conf * 100)}%`, ok ? "pass" : "fail");
+      }
+      log(`SUMMARY ${pass} passed, ${fail} failed`, fail ? "fail" : "pass");
+
+      // 2) Noise stress test: random tilt, mirroring and landmark jitter.
+      for (const [level, sxy, sz] of [["moderate", 0.02, 0.05], ["harsh", 0.04, 0.10]]) {
+        const rows = [];
+        let wrong = 0, total = 0;
+        for (const L of RULE_LETTERS) {
+          let ok = 0; const confused = {};
+          for (let k = 0; k < 100; k++) {
+            const tilt = (Math.random() * 2 - 1) * 20;
+            const r = classify(toPx(noisy(rotate(SHAPES[L], (ORIENT[L] || 0) + tilt), sxy, sz), { mirror: Math.random() < 0.5 }));
+            if (r.got === L) ok++; else { confused[r.got] = (confused[r.got] || 0) + 1; if (r.got !== "-") wrong++; }
+            total++;
+          }
+          const top = Object.entries(confused).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${k === "-" ? "none" : k}×${v}`).join(", ");
+          rows.push({ L, acc: ok / 100, top });
+        }
+        rows.sort((a, b) => a.acc - b.acc);
+        log(`NOISE[${level}] mean accuracy ${Math.round(rows.reduce((s, r) => s + r.acc, 0) / rows.length * 100)}%, wrong-letter rate ${(wrong / total * 100).toFixed(1)}%`);
+        log(`NOISE[${level}] ` + rows.map((r) => `${r.L} ${Math.round(r.acc * 100)}%${r.top ? ` (${r.top})` : ""}`).join(" · "), "muted");
+      }
+    } catch (e) {
+      log("ERROR " + e.stack, "fail");
+    }
+    document.getElementById("out").innerHTML = lines.join("\n");
+  </script>
+</body>
+</html>

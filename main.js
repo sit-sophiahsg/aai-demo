@@ -224,6 +224,9 @@ window.addEventListener("keydown", (e) => {
   else if (key === "t") trailsToggle.checked = !trailsToggle.checked;
 });
 
+// Key releases matter for "hold a key" actions (e.g. hold R to record in Sign mode).
+window.addEventListener("keyup", (e) => activeMode.onKeyUp?.(e));
+
 // Size the stage so it keeps the camera's aspect ratio and fits the window.
 // This only changes CSS size; the canvases' pixel buffers are untouched,
 // so resizing the window never erases the drawing.
@@ -232,7 +235,10 @@ function fitStage() {
     ? video.videoWidth / video.videoHeight
     : 4 / 3;
   const styles = getComputedStyle(stageWrap);
-  const availW = stageWrap.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  let availW = stageWrap.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  // A side panel (Sign mode's Train panel) sits next to the video and takes its width.
+  const side = document.getElementById("trainPanel");
+  if (side && !side.hidden) availW -= side.offsetWidth + parseFloat(styles.columnGap || 0);
   const availH = stageWrap.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
   let w = availW;
   let h = w / aspect;
@@ -621,6 +627,7 @@ function cameraErrorMessage(err) {
 const app = {
   overlay, octx, drawCanvas, particles, pxScale,
   fxQuality: () => fxQuality, // 0.25..1, modes scale their effects by it
+  refit: fitStage,            // call after showing/hiding something next to the video
   handColors: HAND_COLORS,
   drawHoldRing, drawCenterText,
 };

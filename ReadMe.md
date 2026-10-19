@@ -83,10 +83,35 @@ Recognises **A B C D F G H I K L O P Q R U V W X Y**. Either hand works.
 | Same letter twice | Change pose or drop your hand briefly between them |
 | Space / delete / clear | `Space` · `Backspace` · `C`, or the toolbar buttons |
 | Practice | `P` or "Practice". Shows a target letter with a description, gives a ✓ when you match it, then moves on. `N` skips |
+| Train | `T` or "Train". Records labelled samples for the learned classifier (see below). In Sign mode `T` means Train, so use the checkbox to toggle trails |
 | Debug panel | `D`. Shows each finger's ratio, bend angle and state (extended / curved / curled), thumb position, key gaps and angles, and the top letter scores |
 
 The bar under the letter is the classifier's confidence. Grey means no letter, yellow means
 it's shown but not sure enough to type, and green means it's confident enough to type.
+
+#### Train: collecting data for the learned classifier
+
+Press `T` (or "Train") in Sign mode. A panel opens next to the video.
+
+1. Type your name in **Signer**. It's stored with every sample, which later lets us test how
+   well the model works for people it hasn't seen.
+2. Pick a letter in the grid (or use `←` / `→`). All **24 static letters** (A–Y without J)
+   are there, including E, M, N, S and T, which the rules can't do.
+3. Make the sign and **hold `R`** (or hold the Record button). About 10 samples per second are
+   recorded while it's held. While recording, the video gets a red frame and the badge shows `REC`.
+4. Aim for **100 samples per letter**. The bar under each letter turns green when it gets there.
+   Vary your hand a little while recording (distance, small tilts, both hands) so the model
+   learns the handshape, not one exact position.
+
+| Action | How |
+| --- | --- |
+| Export | "Export JSON" downloads every sample. Do this regularly: it's your backup |
+| Import / merge | "Import JSON" adds samples from an exported file (e.g. a friend's). Samples already present are skipped, so importing twice is harmless |
+| Delete | "Delete all “X” samples" removes one letter's samples (asks first) |
+
+Samples are saved in the browser's IndexedDB, so they survive a reload. They're stored
+per browser and per site, so clearing site data deletes them. If storage is blocked (e.g. a
+private window), the panel shows "⚠ Not saved: export to keep".
 
 The top-right corner shows the active delegate (hover it to see the WebGL renderer),
 the camera resolution, model inference time and FPS.
@@ -159,8 +184,23 @@ the camera resolution, model inference time and FPS.
   - **Left/right hands and mirroring:** "which side is the thumb on" is measured in a
     hand-local frame (pinky knuckle → index knuckle), not in screen coordinates, and angles
     don't change when an image is mirrored. So the same rules work for both hands.
-  - All thresholds are in the `CFG` object at the top of the file. They can also be tweaked live
-    via `window.SIGN_CONFIG` in the browser console while watching the debug panel.
+  - All thresholds are in the `CFG` object at the top of `sign/rules.js`. They can also be
+    tweaked live via `window.SIGN_CONFIG` in the browser console while watching the debug panel.
+- **Training data and preprocessing (`sign/features.js`, `sign/dataset.js`):**
+  - A recorded sample stores the **raw** 21 landmarks plus its letter, signer and handedness,
+    not a finished feature vector. Preprocessing runs when training, so it can be improved later
+    without throwing away recordings.
+  - `toVector()` is the **one** preprocessing function, used both when training and when
+    predicting live. Using two different versions would give "training/serving skew": the
+    model would be tested on a different kind of input than it learned from.
+    1. **Translate:** the wrist is moved to the origin, so it doesn't matter where the hand is in the frame.
+    2. **Scale:** divide by hand size (wrist → middle knuckle), so distance from the camera doesn't matter.
+    3. **Mirror:** left hands are flipped (`x → −x`) into right-hand coordinates, so one model serves both hands.
+    4. **No rotation normalisation,** on purpose: G/H point sideways and P/Q point down, so
+       orientation is real information.
+    5. **Vector** = 21 landmarks × (x, y, z) = 63 numbers, plus 22 engineered measurements
+       (finger extension and bend, thumb position, gaps, spreads, orientation) = **85 numbers**.
+       Angles are divided by 90 or 180 so every value is on a similar scale.
 - **Mirroring:** the video is mirrored with CSS. The canvases aren't; instead `x` is flipped in
   code (`1 - x`) so text stays readable. MediaPipe's Left/Right labels assume a mirrored input,
   so they're swapped back (`SWAP_HANDEDNESS` in `main.js`).
@@ -181,9 +221,19 @@ the camera resolution, model inference time and FPS.
 | `particles.js` | Allocation-free glowing particle pool |
 | `modes/draw.js` | Draw mode: strokes, undo/clear, DRAW/HOVER/IDLE state machine |
 | `modes/game.js` | Game mode: Bubble Pop (states, spawning, scoring, combo, high score) |
-| `modes/sign.js` | Sign mode: feature extraction, fuzzy letter rules, hold-to-type, practice, debug panel |
+| `modes/sign.js` | Sign mode UI: Spell / Practice / Train sub-modes, hold-to-type, recording, debug panel |
+| `sign/features.js` | Measurements + the shared preprocessing `toVector()` (used by rules, recording and models) |
+| `sign/rules.js` | Rule-based classifier: `CFG` thresholds and fuzzy letter rules |
+| `sign/letters.js` | Letter sets (19 rule letters, 24 static letters) and handshape descriptions |
+| `sign/dataset.js` | Recorded samples: IndexedDB storage, JSON export/import, counts |
+| `tests/sign-rules.html` | Synthetic tests for the rules (clean, tilted, mirrored, noisy) |
+| `tests/sign-data.html` | Tests for preprocessing invariances and the dataset store (separate test database) |
+| `tests/synthetic-hands.js` | Tiny 3D hand model used by the tests |
 | `serve.ps1` | Tiny static server for Windows |
 
 Every mode exports the same interface (`init`, `enter`, `exit`, `update`, `render`,
-`handLost`, `trailColor`, `labelSuffix`, `badge`, `onKey`). `main.js` only calls the
-**active** mode, so Draw poses can't draw while you're in Game or Sign mode.
+`handLost`, `trailColor`, `labelSuffix`, `badge`, `onKey`, optional `onKeyUp`). `main.js`
+only calls the **active** mode, so Draw poses can't draw while you're in Game or Sign mode.
+
+**Tests:** with the server running, open `http://localhost:8000/tests/sign-rules.html` or
+`http://localhost:8000/tests/sign-data.html`. Results appear on the page.

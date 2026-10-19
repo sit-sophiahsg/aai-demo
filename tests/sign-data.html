@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Data Tests</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #0b0d12; color: #e6e9f2; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+    h1 { font: 700 18px system-ui, sans-serif; margin: 0 0 8px; }
+    .pass { color: #a3e635; } .fail { color: #f87171; } .muted { color: #8b93a7; }
+  </style>
+</head>
+<body>
+  <h1>Sign mode: preprocessing + dataset tests</h1>
+  <p class="muted">Uses a separate test database (handlab-signs-test), so your real recordings are never touched.</p>
+  <pre id="out">Running…</pre>
+  <script type="module">
+    import { toVector, VECTOR_LENGTH, packLandmarks, unpackLandmarks, sampleToVector } from "../sign/features.js";
+    import * as dataset from "../sign/dataset.js";
+    import { SHAPES, rotate, toPx } from "./synthetic-hands.js";
+
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (name, ok, detail = "") => {
+      ok ? pass++ : fail++;
+      const s = `${ok ? "PASS" : "FAIL"} ${name}${detail ? " · " + detail : ""}`;
+      lines.push(`<span class="${ok ? "pass" : "fail"}">${s}</span>`);
+      console.log("TEST " + s);
+    };
+    const maxDiff = (a, b) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
+
+    try {
+      // ---- Preprocessing ----
+      const base = toVector(toPx(SHAPES.K), "Right");
+      check("vector length", base.length === VECTOR_LENGTH, `${base.length} = 63 coordinates + ${VECTOR_LENGTH - 63} engineered`);
+      check("wrist at origin", base[0] === 0 && base[1] === 0 && base[2] === 0);
+      check("middle knuckle at distance 1 (scaled by hand size)",
+        Math.abs(Math.hypot(base[27], base[28]) - 1) < 1e-6);
+
+      const moved = toVector(toPx(SHAPES.K, { cx: 100, cy: 400, scale: 230 }), "Right");
+      check("position + size invariant", maxDiff(base, moved) < 1e-4, `max diff ${maxDiff(base, moved).toExponential(1)}`);
+
+      // A LEFT hand making the same sign looks like a mirror image (x flipped).
+      const left = toVector(toPx(SHAPES.K, { mirror: true }), "Left");
+      check("left hand mirrored into right-hand coordinates", maxDiff(base, left) < 1e-4, `max diff ${maxDiff(base, left).toExponential(1)}`);
+      const leftNoFlip = toVector(toPx(SHAPES.K, { mirror: true }), "Right");
+      check("…and NOT equal without the mirroring step", maxDiff(base, leftNoFlip) > 0.1);
+
+      const sideways = toVector(toPx(rotate(SHAPES.K, 90)), "Right");
+      check("orientation is kept (K rotated 90° gives a different vector)", maxDiff(base, sideways) > 0.5,
+        `max diff ${maxDiff(base, sideways).toFixed(2)}`);
+      const allFinite = [...base, ...moved, ...left, ...sideways].every(Number.isFinite);
+      check("no NaN / Infinity", allFinite);
+
+      const pts = toPx(SHAPES.W);
+      const packed = packLandmarks(pts);
+      const back = unpackLandmarks(packed).map((p) => ({ ...p }));
+      check("pack/unpack round trip", packed.length === 63 && back.every((p, i) => Math.abs(p.x - pts[i].x) < 0.01 && Math.abs(p.z - pts[i].z) < 0.01));
+      check("stored sample -> same vector as live", maxDiff(sampleToVector({ lm: packed, hand: "Right" }), toVector(pts, "Right")) < 1e-3);
+
+      // ---- Dataset (IndexedDB) ----
+      const opened = await dataset.openDataset("handlab-signs-test");
+      check("IndexedDB available", opened.persistent);
+      await dataset.clearAll();
+      for (let i = 0; i < 20; i++) dataset.addSample({ letter: "A", signer: "alice", hand: "Right", lm: packLandmarks(toPx(SHAPES.A)) });
+      for (let i = 0; i < 10; i++) dataset.addSample({ letter: "B", signer: "bob", hand: "Left", lm: packLandmarks(toPx(SHAPES.B, { mirror: true })) });
+      let c = dataset.counts();
+      check("counts per letter / signer", c.byLetter.A === 20 && c.byLetter.B === 10 && c.bySigner.alice === 20 && c.bySigner.bob === 10 && c.total === 30);
+
+      await new Promise((r) => setTimeout(r, 200)); // let background writes finish
+      const reopened = await dataset.openDataset("handlab-signs-test");
+      check("persists across reload (re-open database)", reopened.count === 30, `${reopened.count} samples`);
+
+      const json = dataset.exportJSON();
+      const parsed = JSON.parse(json);
+      check("export JSON", parsed.format === "handlab-sign-samples" && parsed.samples.length === 30, `${(json.length / 1024).toFixed(1)} KB`);
+
+      const removed = await dataset.deleteLetter("A");
+      c = dataset.counts();
+      check("delete one letter", removed === 20 && c.byLetter.A === 0 && c.byLetter.B === 10);
+
+      let r = await dataset.importJSON(json);
+      check("import merges, skipping duplicates", r.added === 20 && r.duplicates === 10, JSON.stringify(r));
+      r = await dataset.importJSON(json);
+      check("importing the same file again adds nothing", r.added === 0 && r.duplicates === 30);
+      const bad = JSON.parse(json);
+      bad.samples = [{ ...bad.samples[0], uid: "x1", letter: "J" }, { ...bad.samples[0], uid: "x2", lm: [1, 2, 3] }];
+      r = await dataset.importJSON(JSON.stringify(bad));
+      check("invalid samples are rejected", r.added === 0 && r.invalid === 2, JSON.stringify(r));
+      let threw = false;
+      try { await dataset.importJSON('{"hello":1}'); } catch { threw = true; }
+      check("non-Hand-Lab file is refused", threw);
+
+      await dataset.clearAll();
+      indexedDB.deleteDatabase("handlab-signs-test");
+    } catch (e) {
+      check("ERROR " + e.stack, false);
+    }
+    lines.push(`<span class="${fail ? "fail" : "pass"}">SUMMARY ${pass} passed, ${fail} failed</span>`);
+    console.log(`TEST SUMMARY ${pass} passed, ${fail} failed`);
+    document.getElementById("out").innerHTML = lines.join("\n");
+  </script>
+</body>
+</html>

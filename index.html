@@ -65,10 +65,13 @@
         <div class="segmented" role="group" aria-label="Sign sub-mode">
           <button id="signSpellBtn" class="seg active" title="Spell words">Spell</button>
           <button id="signPracticeBtn" class="seg" title="Practice letters (P)">Practice <kbd>P</kbd></button>
+          <button id="signTrainBtn" class="seg" title="Record training data (T)">Train <kbd>T</kbd></button>
         </div>
-        <button id="signSpaceBtn" class="btn" title="Add a space (Space)">Space <kbd>Space</kbd></button>
-        <button id="signBackBtn" class="btn" title="Delete last letter (Backspace)">⌫ <kbd>Bksp</kbd></button>
-        <button id="signClearBtn" class="btn" title="Clear text (C)">Clear <kbd>C</kbd></button>
+        <span id="signSpellControls" class="controls-group">
+          <button id="signSpaceBtn" class="btn" title="Add a space (Space)">Space <kbd>Space</kbd></button>
+          <button id="signBackBtn" class="btn" title="Delete last letter (Backspace)">⌫ <kbd>Bksp</kbd></button>
+          <button id="signClearBtn" class="btn" title="Clear text (C)">Clear <kbd>C</kbd></button>
+        </span>
         <button id="practiceNextBtn" class="btn" title="Skip to the next letter (N)" hidden>Skip <kbd>N</kbd></button>
         <label class="toggle" title="Show finger states, angles and letter scores (D)">
           <input id="signDebugToggle" type="checkbox" />
@@ -175,6 +178,41 @@
         <p id="msgText">Downloading MediaPipe HandLandmarker. This takes a few seconds the first time.</p>
       </div>
     </div>
+
+    <!-- Sign mode > Train: training data collection (modes/sign.js + sign/dataset.js) -->
+    <aside id="trainPanel" class="side-panel" hidden>
+      <div class="sp-head">
+        <h3>Training data</h3>
+        <span id="trainStorage" class="sp-storage"></span>
+      </div>
+      <label class="sp-field">
+        <span>Signer</span>
+        <input id="trainSigner" type="text" maxlength="40" placeholder="Your name" autocomplete="off" />
+      </label>
+
+      <div class="sp-letter-row">
+        <div id="trainLetter" class="sp-letter">A</div>
+        <p id="trainDesc" class="sp-desc"></p>
+      </div>
+      <button id="trainRecordBtn" class="btn rec-btn" title="Hold to record (or hold R)">
+        <span class="rec-dot"></span> Hold to record <kbd>R</kbd>
+      </button>
+      <div id="trainStatus" class="sp-status">Pick a letter, make the sign, then hold Record.</div>
+
+      <div class="sp-sub">Samples per letter <span class="sp-muted">(target 100 · ← → to change)</span></div>
+      <div id="trainGrid" class="sp-grid"></div>
+      <button id="trainDeleteBtn" class="btn danger sp-wide">Delete all “A” samples</button>
+      <div id="trainTotal" class="sp-total"></div>
+
+      <div class="sp-row">
+        <button id="trainExportBtn" class="btn" title="Download every sample as a JSON file">Export JSON</button>
+        <button id="trainImportBtn" class="btn" title="Merge samples from an exported file (e.g. a friend's)">Import JSON</button>
+        <input id="trainImportFile" type="file" accept="application/json,.json" hidden />
+      </div>
+
+      <div class="sp-sub">Samples per signer</div>
+      <div id="trainSigners" class="sp-signers"></div>
+    </aside>
   </main>
 
   <footer class="hint">
@@ -193,7 +231,7 @@
       <span>Letters: <b>A B C D F G H I K L O P Q R U V W X Y</b> (G/H sideways, P/Q down)</span>
       <span><b>Hold steady ~0.8 s</b> to type a letter</span>
       <span>To repeat a letter, change pose or drop your hand briefly</span>
-      <span><kbd>Space</kbd> · <kbd>Bksp</kbd> · <kbd>C</kbd> clear · <kbd>P</kbd> practice · <kbd>D</kbd> debug</span>
+      <span><kbd>Space</kbd> · <kbd>Bksp</kbd> · <kbd>C</kbd> clear · <kbd>P</kbd> practice · <kbd>T</kbd> train (hold <kbd>R</kbd> to record) · <kbd>D</kbd> debug</span>
     </div>
     <div class="hint-group">
       <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> modes · <kbd>T</kbd> trails · <kbd>S</kbd> skeleton</span>
