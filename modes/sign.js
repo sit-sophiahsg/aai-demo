@@ -2,16 +2,18 @@
 //  modes/sign.js: SIGN mode, static ASL fingerspelling (rule-based)
 // =============================================================================
 //
-//  Recognises 10 letters that can be told apart from ONE frame of landmarks:
-//      A  B  C  D  I  L  O  V  W  Y
-//  (J and Z are skipped: they're drawn in the air, so they need motion.)
+//  Recognises 19 letters that can be told apart from ONE frame of landmarks:
+//      A  B  C  D  F  G  H  I  K  L  O  P  Q  R  U  V  W  X  Y
+//  (J and Z are drawn in the air, so they need motion. E, M, N, S and T
+//   differ only in where the thumb hides among curled fingers, which is too
+//   subtle for hand-written rules. The learned classifier will handle those.)
 //
 //  HOW THE CLASSIFIER WORKS
 //  ------------------------
 //  1. FEATURES: turn the 21 landmarks into a handful of meaningful numbers
 //     (computeFeatures):
 //       - per finger: extension ratio (shared gestures.js measure) and
-//         bend angle (how much the PIP + DIP joints are bent, in 3D)
+//         bend angle (first bone vs the line from PIP joint to tip, in 3D)
 //       - thumb: how far it sticks out, and which side of the index
 //         knuckle its tip is on
 //       - gaps between fingertips, spread angles between fingers
@@ -40,14 +42,24 @@
 //  is always the +side direction. Angles between bones don't change when
 //  an image is mirrored either. So one set of rules works for both hands.
 //
+//  ORIENTATION (for G/H, which point sideways, and P/Q, which point down)
+//  ----------------------------------------------------------------------
+//  Most features are deliberately rotation-invariant, so a tilted hand still
+//  reads the same. But G vs Q, H vs U and K vs P have the SAME handshape and
+//  differ only in where the hand points, so we also measure direction
+//  relative to the SCREEN, as an unsigned angle from straight up:
+//      0° = up      90° = sideways (left OR right)      180° = down
+//  Being unsigned makes it mirror-safe: pointing left with your right hand
+//  and pointing right with your left hand both read 90°.
+//
 //  All thresholds live in CFG below. Turn on the debug panel (D) to see the
 //  live feature values and letter scores while you tune them. CFG is also
 //  exposed as window.SIGN_CONFIG so you can tweak it from the console.
 // =============================================================================
 
 import {
-  WRIST, THUMB_MCP, THUMB_TIP, INDEX_MCP, INDEX_TIP, MIDDLE_MCP, MIDDLE_TIP,
-  RING_TIP, PINKY_MCP, PINKY_TIP, FINGERS,
+  WRIST, THUMB_MCP, THUMB_TIP, INDEX_MCP, INDEX_PIP, INDEX_TIP, MIDDLE_MCP,
+  MIDDLE_PIP, MIDDLE_TIP, RING_TIP, PINKY_MCP, PINKY_TIP, FINGERS,
   dist, extensionRatio, thumbOutRatio, Debouncer,
 } from "../gestures.js";
 
@@ -57,11 +69,12 @@ const CFG = {
   extendedRatio: 1.15,    // ratio above this = extended (matches gestures.js)
   curledRatio: 0.95,      // ratio below this = curled (tip folded back past the PIP joint)
   ratioSoft: 0.2,         // fuzzy width for ratio checks
-  straightBendMax: 60,    // extended fingers bend less than this (degrees, PIP+DIP)
-  curvedBendMin: 35,      // "curved" (C / O): bent at least this much...
-  curvedBendMax: 145,     // ...but less than a tight fist (~160+)
-  curvedRatioMin: 0.7,    // ...and the tip isn't tucked deep into the palm
-  bendSoft: 40,           // fuzzy width for bend-angle checks
+  // Bend (see fingerBend): straight ≈ 0-15°, C ≈ 60°, O ≈ 90°, hook/fist ≈ 120°+
+  straightBendMax: 45,    // extended fingers bend less than this (degrees)
+  curvedBendMin: 30,      // "curved" (C / O): bent at least this much...
+  curvedBendMax: 110,     // ...but less than a tight fist (~125)
+  curvedRatioMin: 0.65,   // ...and the tip isn't tucked deep into the palm
+  bendSoft: 30,           // fuzzy width for bend-angle checks
 
   // --- Thumb ---
   // "Thumb out" (L, Y) passes if EITHER the thumb sticks out from the palm
@@ -83,9 +96,25 @@ const CFG = {
   dTouchMax: 0.5,         // D: thumb tip touches the middle fingertip
   gapSoft: 0.25,
   lAngleMin: 50,          // L: angle between thumb and index
-  vSpreadMin: 12,         // V: angle between index and middle (below = "U")
+  vSpreadMin: 12,         // V: angle between index and middle
+  uSpreadMax: 10,         // U / H: index and middle held together (below this angle)
   wSpreadMin: 22,         // W: angle between index and ring
+  gParallelMax: 35,       // G / Q: thumb roughly parallel to the index
   angleSoft: 20,
+  crossMax: 0,            // R: index tip crossed to the pinky side of the middle tip (crossIM < 0)
+  crossSoft: 0.12,
+  kThumbGapMax: 0.4,      // K / P: thumb tip between index and middle (near the middle PIP joint)
+  fGapMax: 0.35,          // F: thumb tip touches the index tip
+  xReachMin: 1.35,        // X: index knuckle straight (PIP far from the wrist)...
+  reachSoft: 0.15,
+  xBendMin: 90,           //    ...but the finger is hooked at PIP + DIP
+
+  // --- Orientation (degrees from screen-up: 0 = up, 90 = sideways, 180 = down) ---
+  uprightMax: 45,         // U, K: pointing up
+  sidewaysMin: 55,        // G, H: pointing sideways...
+  sidewaysMax: 125,
+  downMin: 120,           // P, Q: pointing down
+  tiltSoft: 30,
 
   // --- Decision + acceptance ---
   minConfidence: 0.55,    // below this, no letter is shown
@@ -95,7 +124,7 @@ const CFG = {
 };
 window.SIGN_CONFIG = CFG; // live tuning from the browser console
 
-const LETTERS = ["A", "B", "C", "D", "I", "L", "O", "V", "W", "Y"];
+const LETTERS = ["A", "B", "C", "D", "F", "G", "H", "I", "K", "L", "O", "P", "Q", "R", "U", "V", "W", "X", "Y"];
 const FINGER_NAMES = ["Index", "Middle", "Ring", "Pinky"];
 
 // Reference handshapes for Practice mode (palm facing the camera).
@@ -110,6 +139,15 @@ const DESCRIPTIONS = {
   V: "Raise your index and middle fingers and spread them apart (peace sign). Fold the rest down.",
   W: "Raise your index, middle and ring fingers spread apart. Your thumb holds your little finger down.",
   Y: "Stick out your thumb and little finger. Curl your middle three fingers down (hang loose).",
+  F: "Touch your thumb tip to your index fingertip to make a circle. Hold the other three fingers up and apart (like “OK”).",
+  G: "Point your index finger sideways, with your thumb parallel just above it. Curl the other fingers.",
+  H: "Hold your index and middle fingers together and point them sideways. Curl the other fingers.",
+  K: "Raise your index and middle fingers in a V, and put your thumb tip up between them, against the middle finger.",
+  P: "Make a K, then point it down: index forward/down, middle finger down, thumb between them.",
+  Q: "Make a G, then point it down: index and thumb both pointing at the floor.",
+  R: "Raise your index and middle fingers and cross them, with the index over the middle (like “fingers crossed”).",
+  U: "Raise your index and middle fingers held together, pointing up. Thumb holds the other fingers down.",
+  X: "Raise your index finger and hook it, bending the top two joints like a hook. Curl the other fingers.",
 };
 
 // =============================================================================
@@ -124,15 +162,32 @@ const below = (v, threshold, soft) => clamp01(0.5 + (threshold - v) / soft);
 //  Geometry
 // =============================================================================
 
-// Bend at joint b, in degrees: 0 = perfectly straight, 90 = right angle.
+// How bent a finger is, in degrees: the angle between its first bone
+// (MCP -> PIP) and the line from the PIP joint to the fingertip.
+//   0° = dead straight, ~60° = C curve, ~90° = O, ~120°+ = hooked / fist
 // Uses x, y AND z, so a finger bending toward the camera still counts.
-function jointBend(a, b, c) {
-  const ux = a.x - b.x, uy = a.y - b.y, uz = a.z - b.z;
-  const vx = c.x - b.x, vy = c.y - b.y, vz = c.z - b.z;
+//
+// Why not add up the PIP and DIP joint angles? Those come from the two
+// SHORTEST bones (~0.2 hand sizes), so a little landmark jitter (worst in
+// z) makes a big angle error, and summing two angles adds two errors. A
+// noise stress test showed straight fingers being read as bent. PIP -> tip
+// is more than twice as long and gives one angle, so it's much steadier.
+function fingerBend(mcp, pip, tip) {
+  const ux = pip.x - mcp.x, uy = pip.y - mcp.y, uz = pip.z - mcp.z;
+  const vx = tip.x - pip.x, vy = tip.y - pip.y, vz = tip.z - pip.z;
   const lu = Math.hypot(ux, uy, uz), lv = Math.hypot(vx, vy, vz);
   if (!lu || !lv) return 0;
   const cos = Math.max(-1, Math.min(1, (ux * vx + uy * vy + uz * vz) / (lu * lv)));
-  return 180 - (Math.acos(cos) * 180) / Math.PI;
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
+// Direction of a->b relative to the SCREEN, as an unsigned angle from
+// straight up: 0° = up, 90° = sideways (either way), 180° = down.
+function tiltFromUp(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l = Math.hypot(dx, dy);
+  if (!l) return 0;
+  return (Math.acos(Math.max(-1, Math.min(1, -dy / l))) * 180) / Math.PI; // screen y grows downward
 }
 
 // Angle in degrees between two bones (a1->a2) and (b1->b2), in the image plane.
@@ -151,7 +206,7 @@ function angleBetween(a1, a2, b1, b2) {
 function makeFeatures() {
   return {
     ratio: [0, 0, 0, 0],     // extension ratio per finger (index..pinky)
-    bend: [0, 0, 0, 0],      // PIP + DIP bend per finger, degrees
+    bend: [0, 0, 0, 0],      // bend per finger, degrees (see fingerBend)
     ext: [0, 0, 0, 0],       // fuzzy "extended" score per finger
     curl: [0, 0, 0, 0],      // fuzzy "curled" score
     curve: [0, 0, 0, 0],     // fuzzy "curved" score (C / O)
@@ -163,6 +218,12 @@ function makeFeatures() {
     spreadIM: 0,             // angle index vs middle, degrees
     spreadIR: 0,             // angle index vs ring
     angleTI: 0,              // angle thumb vs index
+    crossIM: 0,              // index tip minus middle tip across the palm (< 0 = crossed, R)
+    gapTMp: 0,               // thumb tip <-> middle PIP joint (K / P), hand sizes
+    indexReach: 0,           // wrist->index PIP / wrist->index MCP (X: knuckle straight)
+    indexTilt: 0,            // index direction vs screen-up, degrees (0 up, 90 side, 180 down)
+    handTilt: 0,             // wrist->middle knuckle direction vs screen-up
+    palmFacing: 0,           // 1 = palm flat to the camera, 0 = edge-on
   };
 }
 
@@ -172,9 +233,9 @@ function computeFeatures(pts, f) {
 
   // --- Fingers ---
   for (let i = 0; i < 4; i++) {
-    const [mcp, pip, dip, tip] = FINGERS[i];
+    const [mcp, pip, , tip] = FINGERS[i];
     const r = extensionRatio(pts, FINGERS[i]);
-    const b = jointBend(pts[mcp], pts[pip], pts[dip]) + jointBend(pts[pip], pts[dip], pts[tip]);
+    const b = fingerBend(pts[mcp], pts[pip], pts[tip]);
     f.ratio[i] = r;
     f.bend[i] = b;
     // Extended: tip well past the PIP joint AND the finger is fairly straight.
@@ -213,6 +274,29 @@ function computeFeatures(pts, f) {
   f.spreadIM = angleBetween(pts[INDEX_MCP], pts[INDEX_TIP], pts[MIDDLE_MCP], pts[MIDDLE_TIP]);
   f.spreadIR = angleBetween(pts[INDEX_MCP], pts[INDEX_TIP], pts[13], pts[RING_TIP]);
   f.angleTI = angleBetween(pts[THUMB_MCP], pts[THUMB_TIP], pts[INDEX_MCP], pts[INDEX_TIP]);
+
+  // Crossing (R): normally the index tip is on the index side of the middle
+  // tip (crossIM > 0). Crossed fingers swap that order, so it goes negative.
+  // Measured on the hand-local side axis, so it works for both hands.
+  f.crossIM = sideOf(pts[INDEX_TIP]) - sideOf(pts[MIDDLE_TIP]);
+  // K / P: the thumb tip pokes up between index and middle, near the middle PIP.
+  f.gapTMp = dist(pts[THUMB_TIP], pts[MIDDLE_PIP]) / size;
+  // X: if the index knuckle (MCP) is straight, the PIP joint stays far from
+  // the wrist even though the finger is hooked. In a fist the knuckle bends
+  // too, pulling the PIP joint in.
+  f.indexReach = dist(w, pts[INDEX_PIP]) / (dist(w, pts[INDEX_MCP]) || 1);
+
+  // --- Orientation relative to the screen (see the header) ---
+  f.indexTilt = tiltFromUp(pts[INDEX_MCP], pts[INDEX_TIP]);
+  f.handTilt = tiltFromUp(w, pts[MIDDLE_MCP]);
+  // Palm normal = cross product of two palm edges (wrist->index knuckle,
+  // wrist->pinky knuckle). Its z part says how directly the palm faces the
+  // camera. We use the size only (not the sign): the sign flips between left
+  // and right hands, and we don't want to trust the Left/Right label here.
+  const ax = pts[INDEX_MCP].x - w.x, ay = pts[INDEX_MCP].y - w.y, az = pts[INDEX_MCP].z - w.z;
+  const bx = pts[PINKY_MCP].x - w.x, by = pts[PINKY_MCP].y - w.y, bz = pts[PINKY_MCP].z - w.z;
+  const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+  f.palmFacing = Math.abs(nz) / (Math.hypot(nx, ny, nz) || 1);
   return f;
 }
 
@@ -263,8 +347,56 @@ function scoreLetters(f, s) {
   // L: index up + thumb out at a wide angle, the rest curled.
   s.L = Math.min(ie, mc, rc, pc, thumbOut, above(f.angleTI, CFG.lAngleMin, CFG.angleSoft));
 
-  // V: index + middle up AND spread apart (together they'd be "U").
-  s.V = Math.min(ie, me, rc, pc, above(f.spreadIM, CFG.vSpreadMin, CFG.angleSoft));
+  // --- Shared building blocks for the two-finger letters (U V R K H P) ---
+  const together = below(f.spreadIM, CFG.uSpreadMax, CFG.angleSoft);
+  const uncrossed = above(f.crossIM, CFG.crossMax, CFG.crossSoft);
+  const crossed = below(f.crossIM, CFG.crossMax, CFG.crossSoft);
+  const thumbBetween = below(f.gapTMp, CFG.kThumbGapMax, CFG.gapSoft);
+  const thumbNotBetween = 1 - thumbBetween;
+  // Orientation (screen-relative, see the header)
+  const upright = below(f.indexTilt, CFG.uprightMax, CFG.tiltSoft);
+  const sideways = Math.min(above(f.indexTilt, CFG.sidewaysMin, CFG.tiltSoft),
+    below(f.indexTilt, CFG.sidewaysMax, CFG.tiltSoft));
+  // For "down", either the index OR the whole hand pointing down counts
+  // (in P the index often points forward while the hand points down).
+  const down = Math.max(above(f.indexTilt, CFG.downMin, CFG.tiltSoft),
+    above(f.handTilt, CFG.downMin, CFG.tiltSoft));
+
+  // V: index + middle up AND spread apart, not crossed, thumb not between them.
+  s.V = Math.min(ie, me, rc, pc, above(f.spreadIM, CFG.vSpreadMin, CFG.angleSoft), uncrossed, thumbNotBetween);
+
+  // U: index + middle together, pointing UP (sideways it would be H).
+  s.U = Math.min(ie, me, rc, pc, together, uncrossed, thumbNotBetween, upright);
+
+  // H: the U handshape pointing SIDEWAYS.
+  s.H = Math.min(ie, me, rc, pc, together, uncrossed, sideways);
+
+  // R: index and middle up and CROSSED (index tip on the pinky side).
+  s.R = Math.min(ie, me, rc, pc, crossed);
+
+  // K: index + middle up, thumb tip between them, pointing UP.
+  s.K = Math.min(ie, me, rc, pc, thumbBetween, upright);
+
+  // P: the K handshape pointing DOWN.
+  s.P = Math.min(ie, me, rc, pc, thumbBetween, down);
+
+  // F: thumb and index tips touch (a circle), the other three fingers up.
+  //    (O also touches, but its other fingers are curved, not straight.)
+  s.F = Math.min(notExt(0), me, re, pe, below(f.gapTI, CFG.fGapMax, CFG.gapSoft));
+
+  // X: index knuckle straight but the finger hooked; others curled; thumb
+  //    not touching the index tip (that would be O).
+  s.X = Math.min(above(f.indexReach, CFG.xReachMin, CFG.reachSoft), above(f.bend[0], CFG.xBendMin, CFG.bendSoft),
+    mc, rc, pc, above(f.gapTI, CFG.aGapMin, CFG.gapSoft));
+
+  // G: index pointing SIDEWAYS, thumb parallel to it (not tucked), rest curled.
+  //    (L has the thumb at ~90° to the index instead.)
+  const gShape = Math.min(ie, mc, rc, pc, below(f.angleTI, CFG.gParallelMax, CFG.angleSoft),
+    above(f.thumbSide, CFG.aThumbSide, CFG.sideSoft));
+  s.G = Math.min(gShape, sideways);
+
+  // Q: the G handshape pointing DOWN.
+  s.Q = Math.min(gShape, down);
 
   // W: index + middle + ring up and spread, pinky down.
   s.W = Math.min(ie, me, re, pc, above(f.spreadIR, CFG.wSpreadMin, CFG.angleSoft));
@@ -394,6 +526,7 @@ function setDebug(on) {
 
 // ---- Debug panel ----
 const fmt = (v, d = 2) => v.toFixed(d);
+const tiltWord = (t) => (t < CFG.uprightMax ? "up" : t < CFG.sidewaysMax ? "side" : "down");
 function fingerState(f, i) {
   const e = f.ext[i], c = f.curl[i], v = f.curve[i];
   const m = Math.max(e, c, v);
@@ -433,6 +566,13 @@ function renderDebug() {
     `<span>Index–middle spread</span><b>${Math.round(f.spreadIM)}°</b>` +
     `<span>Index–ring spread</span><b>${Math.round(f.spreadIR)}°</b>` +
     `<span>Thumb–index angle</span><b>${Math.round(f.angleTI)}°</b>` +
+    `<span>Index/middle cross (R &lt; 0)</span><b>${fmt(f.crossIM)}</b>` +
+    `<span>Thumb–middle PIP (K, P)</span><b>${fmt(f.gapTMp)}</b>` +
+    `<span>Index knuckle reach (X)</span><b>${fmt(f.indexReach)}</b>` +
+    `</div><div class="dbg-sub">Orientation (0° up · 90° side · 180° down)</div><div class="dbg-grid">` +
+    `<span>Index direction</span><b>${Math.round(f.indexTilt)}° ${tiltWord(f.indexTilt)}</b>` +
+    `<span>Hand direction</span><b>${Math.round(f.handTilt)}° ${tiltWord(f.handTilt)}</b>` +
+    `<span>Palm facing camera</span><b>${fmt(f.palmFacing)}</b>` +
     `</div><div class="dbg-sub">Top scores</div>${bars}`;
 }
 

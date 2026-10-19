@@ -5,7 +5,7 @@ It tracks up to 2 hands, draws the 21-point skeleton, and has three modes:
 
 - **Draw:** air draw with your index finger.
 - **Game:** Bubble Pop, popping bubbles with your fingertips.
-- **Sign:** ASL fingerspelling for 10 static letters, with a Spell mode and a Practice mode.
+- **Sign:** ASL fingerspelling for 19 static letters, with a Spell mode and a Practice mode.
 
 Glowing particle trails follow your index fingertip in every mode.
 
@@ -68,8 +68,14 @@ library, WASM runtime and model load from jsDelivr and Google.
 
 ### Sign mode: ASL fingerspelling
 
-Recognises **A B C D I L O V W Y**. J and Z are skipped because they need motion. Hold your hand
-with the palm facing the camera. Either hand works.
+Recognises **A B C D F G H I K L O P Q R U V W X Y**. Either hand works.
+- Most letters are signed with the fingers up.
+- **G and H point sideways**, and **P and Q point down**. These pairs have the same handshape
+  (G/Q, H/U, K/P), so the classifier also looks at which way your hand points on screen.
+- Not covered by the rules:
+  - J and Z need motion.
+  - E, M, N, S and T differ only in where the thumb hides among curled fingers, which is too
+    subtle for hand-written rules.
 
 | Action | How |
 | --- | --- |
@@ -125,9 +131,31 @@ the camera resolution, model inference time and FPS.
      (a fuzzy AND).
   3. *Decision:* the highest-scoring letter wins if it's above `minConfidence`. A short debounce
      and the 0.8 s hold stop flickering letters from being typed.
-  - Look-alikes are separated by specific checks: thumb beside the index (A) vs across the
-    fingers (plain fist); thumb tip touching the index tip (O) vs a clear gap (C); fingers spread
-    (V) vs together (U); middle finger curved round to the thumb (D) vs a fist while pointing.
+  - Look-alikes are separated by specific checks:
+
+    | Look-alikes | Separated by |
+    | --- | --- |
+    | A vs plain fist | Thumb beside the index, or across the fingers |
+    | O vs C | Thumb tip touching the index tip, or a clear gap |
+    | F vs O | Thumb touches the index tip in both; F's other fingers are straight, O's are curved |
+    | V vs U vs R | Index and middle spread, together, or crossed (index tip on the pinky side of the middle tip) |
+    | K vs V | Thumb tip between index and middle (near the middle PIP), or tucked |
+    | X vs fist | Index knuckle straight but finger hooked, or knuckle bent too |
+    | D vs pointing | Middle finger curved round to the thumb, or curled into a fist |
+    | G vs L | Thumb parallel to the index, or at 90° |
+  - **Orientation:** the index direction and hand direction are measured as an *unsigned* angle
+    from screen-up (0° up, 90° sideways either way, 180° down), so they work for both hands and
+    when mirrored. U/H, K/P and G/Q share a handshape and are told apart by this angle alone.
+    "Palm facing" (how directly the palm faces the camera, 0–1) is shown in the debug panel.
+  - **Finger bend** is the angle between a finger's first bone and the line from its PIP joint
+    to the tip. An earlier version summed the two small joint angles near the tip. A noise
+    stress test showed that was far too sensitive to landmark jitter, and accuracy under noise
+    went from 24% to 72% after the change.
+  - **Synthetic tests:** all 19 letters, each upright and tilted ±20°, plus mirrored, plus
+    4 rejection poses (122 checks), all pass. With random landmark noise added, mean accuracy is
+    99% at moderate noise and 72% at harsh noise. Under harsh noise almost every miss is
+    "no letter" rather than a wrong letter (1.4% wrong). The weakest letters under noise are
+    B, F, O, W and H.
   - **Left/right hands and mirroring:** "which side is the thumb on" is measured in a
     hand-local frame (pinky knuckle → index knuckle), not in screen coordinates, and angles
     don't change when an image is mirrored. So the same rules work for both hands.
