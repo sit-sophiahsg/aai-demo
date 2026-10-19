@@ -1,0 +1,236 @@
+/* ---------- Theme ---------- */
+:root {
+  --bg: #0b0d12;
+  --panel: #141821;
+  --panel-2: #1b2030;
+  --border: #262c3d;
+  --text: #e6e9f2;
+  --muted: #8b93a7;
+  --accent: #22d3ee;
+  --danger: #f87171;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden; /* the layout always fits the window, no scrolling */
+}
+
+/* Page is a vertical stack: toolbar / stage (fills the rest) / hint bar */
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.3px;
+}
+.logo { font-size: 22px; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.swatches { display: flex; gap: 6px; }
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--c);
+  cursor: pointer;
+  outline-offset: 2px;
+  transition: transform 0.12s;
+}
+.swatch:hover { transform: scale(1.1); }
+.swatch.active {
+  border-color: var(--bg);
+  box-shadow: 0 0 0 2px var(--c);
+}
+
+.slider, .toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.slider input { width: 110px; accent-color: var(--accent); }
+.slider output {
+  min-width: 2ch;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.toggle input { accent-color: var(--accent); }
+
+/* Smoothing popover */
+.tuning { position: relative; }
+.tuning summary { list-style: none; }
+.tuning summary::-webkit-details-marker { display: none; }
+.tuning[open] summary { border-color: var(--accent); }
+.tuning-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+.tuning-panel .slider span { min-width: 72px; }
+.tuning-panel .slider output { min-width: 5ch; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+
+kbd {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.status { display: flex; gap: 8px; }
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* ---------- Stage ---------- */
+#stageWrap {
+  flex: 1;          /* take all remaining height */
+  min-height: 0;    /* allow shrinking inside the flex column */
+  display: grid;
+  place-items: center;
+  padding: 14px;
+}
+
+/* main.js sets the stage's exact width/height so it keeps the camera's
+   aspect ratio and fits inside #stageWrap. */
+#stage {
+  position: relative;
+  width: 640px;
+  height: 480px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Video and both canvases are stacked exactly on top of each other */
+#stage video,
+#stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Mirror ONLY the video. The canvases are not mirrored with CSS; instead
+   main.js flips the x coordinate (x -> 1 - x) so text labels stay readable. */
+#video { transform: scaleX(-1); object-fit: cover; }
+
+/* ---------- Loading / error message ---------- */
+.message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(11, 13, 18, 0.92);
+  z-index: 5;
+}
+.message.hidden { display: none; }
+.message h2 { margin: 12px 0 0; font-size: 20px; }
+.message p { margin: 0; max-width: 46ch; color: var(--muted); line-height: 1.5; }
+.message.error h2 { color: var(--danger); }
+.message code {
+  background: var(--panel-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 4px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+.message.error .spinner { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Hint bar ---------- */
+.hint {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  padding: 8px 16px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hint b { color: var(--text); font-weight: 600; }
+
+@media (max-width: 700px) {
+  .toolbar { justify-content: center; }
+  .hint { font-size: 12px; }
+}

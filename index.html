@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hand Tracking Air Draw</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Top bar: title, drawing controls, status -->
+  <header class="toolbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">✋</span>
+      <span>Air Draw</span>
+    </div>
+
+    <div class="controls">
+      <!-- Color swatches. data-color is read by main.js. Keys 1–6 also pick them. -->
+      <div class="swatches" role="radiogroup" aria-label="Brush color">
+        <button class="swatch active" data-color="#22d3ee" style="--c:#22d3ee" title="Cyan (1)"></button>
+        <button class="swatch" data-color="#f472b6" style="--c:#f472b6" title="Pink (2)"></button>
+        <button class="swatch" data-color="#a3e635" style="--c:#a3e635" title="Lime (3)"></button>
+        <button class="swatch" data-color="#facc15" style="--c:#facc15" title="Yellow (4)"></button>
+        <button class="swatch" data-color="#f97316" style="--c:#f97316" title="Orange (5)"></button>
+        <button class="swatch" data-color="#ffffff" style="--c:#ffffff" title="White (6)"></button>
+      </div>
+
+      <label class="slider">
+        <span>Brush</span>
+        <input id="brushSize" type="range" min="2" max="40" value="8" />
+        <output id="brushValue">8</output>
+      </label>
+
+      <label class="toggle" title="Show/hide the hand skeleton (S)">
+        <input id="showSkeleton" type="checkbox" checked />
+        <span>Skeleton</span>
+      </label>
+
+      <!-- Off by default so a relaxed hand can never wipe your work -->
+      <label class="toggle" title="Hold a wide-open palm still for 1.5s to clear">
+        <input id="palmClear" type="checkbox" />
+        <span>Palm clear</span>
+      </label>
+
+      <!-- One Euro filter tuning (see main.js) -->
+      <details class="tuning">
+        <summary class="btn">Smoothing</summary>
+        <div class="tuning-panel">
+          <label class="slider" title="Lower = steadier when moving slowly, but more lag">
+            <span>Min cutoff</span>
+            <input id="minCutoff" type="range" min="0.1" max="5" step="0.1" value="1.0" />
+            <output id="minCutoffValue">1.0</output>
+          </label>
+          <label class="slider" title="Higher = less lag when moving fast">
+            <span>Beta</span>
+            <input id="beta" type="range" min="0" max="0.05" step="0.001" value="0.008" />
+            <output id="betaValue">0.008</output>
+          </label>
+        </div>
+      </details>
+
+      <button id="undoBtn" class="btn" title="Undo last stroke (U or Ctrl+Z)">Undo <kbd>U</kbd></button>
+      <button id="clearBtn" class="btn" title="Clear drawing (C)">Clear <kbd>C</kbd></button>
+    </div>
+
+    <div class="status">
+      <span id="delegate" class="pill">—</span>
+      <span id="resolution" class="pill">—</span>
+      <span id="infer" class="pill">— ms</span>
+      <span id="fps" class="pill">0 FPS</span>
+    </div>
+  </header>
+
+  <!-- Stage: video + two canvases stacked on top of each other -->
+  <main id="stageWrap">
+    <div id="stage">
+      <!-- The raw webcam feed (mirrored with CSS so it feels like a mirror) -->
+      <video id="video" playsinline muted></video>
+      <!-- Persistent canvas: your strokes live here until you clear -->
+      <canvas id="drawCanvas"></canvas>
+      <!-- Overlay canvas: wiped and redrawn every frame (skeleton, cursor, labels) -->
+      <canvas id="overlay"></canvas>
+
+      <!-- Loading / error screen, hidden once everything is running -->
+      <div id="message" class="message">
+        <div class="spinner" id="spinner"></div>
+        <h2 id="msgTitle">Loading hand model…</h2>
+        <p id="msgText">Downloading MediaPipe HandLandmarker. This takes a few seconds the first time.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="hint">
+    <span><b>Pinch</b> thumb + index to draw</span>
+    <span><b>Release</b> to lift the pen</span>
+    <span><kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>1</kbd>–<kbd>6</kbd> colors · <kbd>[</kbd> <kbd>]</kbd> brush · <kbd>S</kbd> skeleton</span>
+  </footer>
+
+  <!-- type="module" lets main.js use `import` to pull tasks-vision from the CDN -->
+  <script type="module" src="main.js"></script>
+</body>
+</html>
