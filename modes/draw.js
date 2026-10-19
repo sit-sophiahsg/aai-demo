@@ -291,7 +291,7 @@ function setColor(color) {
 function setBrushSize(size) {
   brushSize = Math.max(Number(brushSlider.min), Math.min(Number(brushSlider.max), size));
   brushSlider.value = brushSize;
-  brushValue.textContent = brushSize;
+  brushValue.textContent = `${brushSize} px`;
 }
 
 // =============================================================================
@@ -370,8 +370,9 @@ export const drawMode = {
     return states[hand.label]?.mode || "IDLE";
   },
 
+  // On-video state chip: DRAWING / HOVER / IDLE (main.js shows NO HAND without a hand).
   badge() {
-    return { text: topMode === "NONE" ? "NO HAND" : topMode, tone: topMode };
+    return { text: topMode === "DRAW" ? "DRAWING" : topMode === "NONE" ? "NO HAND" : topMode, tone: topMode };
   },
 
   onKey(e) {

@@ -30,27 +30,45 @@ powershell -ExecutionPolicy Bypass -File serve.ps1      # then open http://local
 Allow camera access when the browser asks. You need an internet connection, because the
 library, WASM runtime and model load from jsDelivr and Google.
 
+## The interface
+
+- **Header:**
+  - Left: the app name.
+  - Centre: the mode tabs (Draw / Game / Sign, keys `1` `2` `3`).
+  - Right: one **status chip**, e.g. `34 fps · GPU · 640×480`. The dot is green at 25 fps or
+    more and amber below. `FX nn%` appears in the chip while particle effects are being reduced.
+    Hover the chip for the model's inference time and the WebGL renderer.
+  - The `?` button is reserved for the upcoming tutorial.
+- **Video:** in the top corners are a live **state chip** (Draw: `DRAWING` / `HOVER` / `IDLE`;
+  Game: the game state; Sign: `LETTER A`, or `DRAWING J` / `DRAWING Z`; `NO HAND` when no hand
+  is visible), the detected hand and a `Mirrored` chip. With no hand in view, a short hint in
+  the middle explains how to position it.
+- **Gesture legend:** below the video, the main gestures for the current mode.
+- **Side panel:** the controls for the current mode. On narrow screens it moves below the video.
+- **Design:** colours, fonts (Sora for UI text, JetBrains Mono for numbers, keys and labels)
+  and radii are CSS variables at the top of `style.css`. Icons are inline SVG.
+
 ## Controls
 
 ### Everywhere
 
 | Action | How |
 | --- | --- |
-| Switch mode | `1` Draw · `2` Game · `3` Sign, or the tabs at the top |
-| Particle trails on/off | `T`, or the "Trails" checkbox. The slider sets intensity |
-| Toggle skeleton | `S` |
-| Smoothing | "Smoothing" menu: One Euro `min cutoff` and `beta` |
+| Switch mode | `1` Draw · `2` Game · `3` Sign, or the tabs in the header |
+| Particle trails on/off | `T` (in Draw and Game), or the **Particle trails** switch in the Draw panel; the slider under it sets intensity |
+| Toggle skeleton | `S`, or the **Hand skeleton** switch in the Draw panel |
+| Smoothing | Draw panel → **Advanced**: One Euro `min cutoff` and `beta` |
 
 ### Draw mode
 
 | Action | How |
 | --- | --- |
-| **DRAW** ☝ | Only the index finger extended: the fingertip draws |
-| **HOVER** ✌ | Index + middle extended: the cursor moves, pen up (use it between letters) |
+| **DRAW** | Only the index finger extended: the fingertip draws |
+| **HOVER** | Index + middle extended: the cursor moves, pen up (use it between letters) |
 | **IDLE** | Any other pose (fist, open palm…): nothing happens |
 | Undo last stroke | `U`, `Ctrl+Z`, or the Undo button |
 | Clear | `C` or the Clear button |
-| Palm clear (off by default) | Tick "Palm clear", then hold a wide-open, spread hand still for 1.5 s |
+| Palm clear (off by default) | Turn on **Palm-hold clears canvas**, then hold a wide-open, spread hand still for 1.5 s |
 | Color | Click a swatch or press `Shift+1` to `Shift+6` |
 | Brush size | Slider, or `[` / `]` |
 
@@ -60,13 +78,15 @@ library, WASM runtime and model load from jsDelivr and Google.
 | --- | --- |
 | Start / restart | Hold an **open palm** (all 5 fingers out) for 1 s, or press `Space` / "Start round" |
 | Pop a bubble | Touch it with an **index fingertip**. Either hand and any pose works |
-| Scoring | Normal bubbles 10–20 (smaller = more) · ★ **gold** +50 · 💣 **bomb** −30, and the combo resets |
+| Scoring | Normal bubbles 10–20 (smaller = more) · **gold** +50 · **bomb** −30, and the combo resets |
 | Combo | Each pop within 1 s of the last raises the multiplier (x2, x3… up to x5) |
 
 - Rounds last 60 s. Bubbles get faster and more numerous over the round, and bombs get more common.
 - The high score is saved in your browser (`localStorage`).
 - After game over, put your hand down before holding your palm up again, so you can't restart by accident.
 - Switching away from Game mode abandons the current round.
+- During a round, score, time and combo appear as three cards at the top of the video. The best
+  score is in the side panel.
 
 ### Sign mode: ASL fingerspelling
 
@@ -79,33 +99,38 @@ Either hand works.
     sideways.
   - **Z:** point with your index finger and draw a Z: across, diagonally down and back, across.
   - Start moving within ~0.8 s of forming the handshape, otherwise the static I or D gets typed
-    first. While you're drawing, the path is shown in yellow and the badge says `DRAWING J` / `DRAWING Z`.
+    first. While you're drawing, the path is shown in yellow and the state chip says `DRAWING J` / `DRAWING Z`.
 - Most letters are signed with the fingers up.
 - **G and H point sideways**, and **P and Q point down**. These pairs have the same handshape
   (G/Q, H/U, K/P), so the classifier also looks at which way your hand points on screen.
 
 | Action | How |
 | --- | --- |
-| Type a letter | Hold the handshape steady for ~0.8 s. The ring around the big letter fills, then it's added |
+| Type a letter | Hold the handshape steady for ~0.8 s. The thin inner ring fills, then the letter is added |
 | Same letter twice | Change pose or drop your hand briefly between them |
-| Space / delete / clear | `Space` · `Backspace` · `C`, or the toolbar buttons |
-| Practice | `P` or "Practice". Shows a target letter with a description, gives a ✓ when you match it, then moves on. `N` skips |
-| Train | `T` or "Train". Records labelled samples for the learned classifier (see below). In Sign mode `T` means Train, so use the checkbox to toggle trails |
-| Debug panel | `D`. Shows each finger's ratio, bend angle and state (extended / curved / curled), thumb position, key gaps and angles, and the top letter scores |
+| Space / delete / clear | `Space` · `Backspace` · `C`, or the buttons in the **Typed text** card |
+| Practice | `P` or "Practice". Shows a target letter with a description, shows a tick when you match it, then moves on. `N` skips |
+| Train | `T` or "Train". Records labelled samples for the learned classifier (see below). In Sign mode `T` means Train; switch trails off in the Draw panel instead |
+| Debug panel | `D`, or the **Debug panel** switch. Shows each finger's ratio, bend angle and state (extended / curved / curled), thumb position, key gaps and angles, and the top letter scores |
 
-The bar under the letter is the classifier's confidence. Grey means no letter, yellow means
-it's shown but not sure enough to type, and green means it's confident enough to type.
+The letter ring has two arcs:
+- **Outer arc:** the classifier's confidence. Grey means no letter, amber means it's shown but
+  not sure enough to type, and green means it's confident enough to type.
+- **Inner arc:** fills while you hold the letter.
+
+Below the ring are the confidence %, the active classifier, and the Rules / k-NN / MLP switch.
 
 #### Train: collecting data for the learned classifier
 
-Press `T` (or "Train") in Sign mode. A panel opens next to the video.
+Press `T` (or "Train") in Sign mode. The Train card replaces the letter ring and the typed
+text in the side panel.
 
 1. Type your name in **Signer**. It's stored with every sample, which later lets us test how
    well the model works for people it hasn't seen.
 2. Pick a letter in the grid (or use `←` / `→`). All **24 static letters** (A–Y without J)
    are there, including E, M, N, S and T, which the rules can't do.
 3. Make the sign and **hold `R`** (or hold the Record button). About 10 samples per second are
-   recorded while it's held. While recording, the video gets a red frame and the badge shows `REC`.
+   recorded while it's held. While recording, the video gets a red frame and the state chip shows `REC`.
 4. Aim for **100 samples per letter**. The bar under each letter turns green when it gets there.
    Vary your hand a little while recording (distance, small tilts, both hands) so the model
    learns the handshape, not one exact position.
@@ -124,10 +149,10 @@ private window), the panel shows "⚠ Not saved: export to keep".
 
 | Action | How |
 | --- | --- |
-| Choose the classifier | **Classifier** dropdown in the Sign toolbar: Rules / k-NN / MLP (remembered between visits). The letter card shows which one is active |
+| Choose the classifier | The **Rules / k-NN / MLP** switch under the letter ring (remembered between visits) |
 | k-NN settings | Train panel → Models: `k` and distance (Euclidean / cosine). Takes effect immediately; nothing to train |
 | Train the MLP | Train panel → Models → **Train MLP**. Shows loss and accuracy per epoch, then saves the model in the browser, so it's there after a reload |
-| Compare all three | **Evaluate** in the Sign toolbar (see the pipeline section below) |
+| Compare all three | **Evaluate classifiers** in the Sign panel (see the pipeline section below) |
 
 Spell, Practice, the confidence ring and the debug panel work with all three. For k-NN and
 MLP the debug panel shows the **top-4 class probabilities**. Practice offers the letters the
@@ -245,8 +270,18 @@ accuracy must be measured on your recordings with **Evaluate**.
     Z drawn with an open hand.
   - In the real Sign mode, I and D must not type mid-motion.
 
-The top-right corner shows the active delegate (hover it to see the WebGL renderer),
-the camera resolution, model inference time and FPS.
+
+## Known issues
+
+- **Z is unreliable in live use.** It passes the synthetic tests, but with a real hand it often
+  isn't recognised. The likely causes are the stroke-length and "sideways" thresholds in
+  `MOTION_CFG` (`sign/motion.js`) being too strict for real, curved strokes, and the pointing
+  handshape flickering mid-motion. The debug panel's *Motion* line shows which check fails.
+  J works more reliably.
+- **U / V are often confused** by the learned models with the current recordings. More varied
+  samples of both should help.
+- **P and X** are hard to trigger with the rules classifier (P is often read as V, X as C). The
+  k-NN / MLP classifiers handle them better.
 
 ## How it works (short version)
 
@@ -340,7 +375,7 @@ the camera resolution, model inference time and FPS.
   It uses the GPU delegate and falls back to CPU if that fails. The active delegate is logged to the console.
   An **adaptive effects budget** watches the render rate. If it drops below 45 fps, particle
   trails and bursts are scaled back (down to 25%), and they slowly return when it's smooth again.
-  When the budget is active, the FPS pill shows `FX nn%`.
+  When the budget is active, the header's status chip shows `FX nn%`.
 
 ## Files
 

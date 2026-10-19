@@ -75,11 +75,14 @@ const stage = $("stage");
 const stageWrap = $("stageWrap");
 const octx = overlay.getContext("2d");
 
-const fpsEl = $("fps");
-const inferEl = $("infer");
-const delegateEl = $("delegate");
-const resEl = $("resolution");
+const statusChip = $("statusChip");
+const statusText = $("statusText");
 const modeBadge = $("modeBadge");
+const modeBadgeText = $("modeBadgeText");
+const handChip = $("handChip");
+const emptyState = $("emptyState");
+const sidePanel = $("sidePanel");
+const stageCol = document.querySelector(".stage-col");
 const messageEl = $("message");
 const msgTitle = $("msgTitle");
 const msgText = $("msgText");
@@ -165,6 +168,9 @@ function setMode(id) {
   });
   // Show only the controls/hints that belong to this mode.
   document.querySelectorAll("[data-for]").forEach((el) => (el.hidden = el.dataset.for !== id));
+  shownHands = null; // re-evaluate the empty state for this mode
+  updateStageChips();
+  fitStage();
   console.info(`[HandLab] Mode: ${next.name}`);
 }
 
@@ -172,8 +178,26 @@ function setBadge({ text, tone }) {
   const key = text + tone;
   if (key === shownBadge) return; // only touch the DOM when it changes
   shownBadge = key;
-  modeBadge.textContent = text;
+  modeBadgeText.textContent = text;
   modeBadge.dataset.mode = tone;
+}
+
+// On-video chips + empty state. A mode's badge can set keepWhenNoHand (e.g.
+// a running game round); otherwise no visible hand shows "NO HAND".
+let shownHands = null;
+let cameraRunning = false;
+function updateStageChips() {
+  const b = activeMode.badge();
+  setBadge(visible.length || b.keepWhenNoHand ? b : { text: "NO HAND", tone: "NONE" });
+
+  const labels = visible.length === 2 ? "Both hands" : visible.length ? `${visible[0].label} hand` : "";
+  const showEmpty = cameraRunning && !visible.length && activeMode.id !== "game";
+  const key = labels + showEmpty;
+  if (key === shownHands) return;
+  shownHands = key;
+  handChip.textContent = labels;
+  handChip.hidden = !labels;
+  emptyState.hidden = !showEmpty;
 }
 
 // =============================================================================
@@ -238,12 +262,13 @@ function fitStage() {
   const aspect = video.videoWidth && video.videoHeight
     ? video.videoWidth / video.videoHeight
     : 4 / 3;
-  const styles = getComputedStyle(stageWrap);
-  let availW = stageWrap.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
-  // A side panel (Sign mode's Train panel) sits next to the video and takes its width.
-  const side = document.getElementById("trainPanel");
-  if (side && !side.hidden) availW -= side.offsetWidth + parseFloat(styles.columnGap || 0);
-  const availH = stageWrap.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+  const availW = stageWrap.clientWidth;
+  // Side-by-side layout: the stage fills the height its column gives it.
+  // Stacked layout (narrow screens, side panel wrapped below the video): the
+  // page scrolls, so cap the video at ~65% of the window height instead.
+  const stacked = sidePanel.offsetTop > stageCol.offsetTop + 8;
+  stageWrap.style.height = stacked ? "auto" : "";
+  const availH = stacked ? window.innerHeight * 0.65 : stageWrap.clientHeight;
   let w = availW;
   let h = w / aspect;
   if (h > availH) {
@@ -297,7 +322,7 @@ function drawSkeleton(pts, color) {
 function drawLabel(pts, text, color) {
   const s = pxScale();
   const { x, y } = pts[WRIST];
-  octx.font = `600 ${14 * s}px system-ui, sans-serif`;
+  octx.font = `600 ${14 * s}px Sora, system-ui, sans-serif`;
   const w = octx.measureText(text).width + 16 * s;
   const h = 24 * s;
   const bx = x - w / 2;
@@ -332,9 +357,9 @@ function drawHoldRing(center, progress, title, subtitle, color) {
   octx.fillStyle = "#fff";
   octx.textAlign = "center";
   octx.textBaseline = "middle";
-  octx.font = `700 ${14 * s}px system-ui, sans-serif`;
+  octx.font = `700 ${14 * s}px Sora, system-ui, sans-serif`;
   octx.fillText(title, center.x, center.y - 7 * s);
-  octx.font = `500 ${11 * s}px system-ui, sans-serif`;
+  octx.font = `500 ${11 * s}px Sora, system-ui, sans-serif`;
   octx.fillText(subtitle, center.x, center.y + 9 * s);
 }
 
@@ -345,10 +370,10 @@ function drawCenterText(title, subtitle) {
   octx.textAlign = "center";
   octx.textBaseline = "middle";
   octx.fillStyle = "rgba(255,255,255,0.92)";
-  octx.font = `800 ${34 * s}px system-ui, sans-serif`;
+  octx.font = `800 ${34 * s}px Sora, system-ui, sans-serif`;
   octx.fillText(title, cx, cy - 14 * s);
   octx.fillStyle = "rgba(200,206,220,0.75)";
-  octx.font = `500 ${16 * s}px system-ui, sans-serif`;
+  octx.font = `500 ${16 * s}px Sora, system-ui, sans-serif`;
   octx.fillText(subtitle, cx, cy + 20 * s);
 }
 
@@ -465,7 +490,25 @@ function processFrame(results, now, dt) {
     const suffix = activeMode.labelSuffix(hand);
     drawLabel(hand.pts, suffix ? `${hand.label} · ${suffix}` : hand.label, HAND_COLORS[hand.label]);
   }
-  setBadge(activeMode.badge());
+  updateStageChips();
+}
+
+// Header status chip: "34 fps · GPU · 640×480" (+ "FX nn%" while effects are
+// reduced). Green dot at 25+ fps, amber below. Inference time and the WebGL
+// renderer are in its tooltip.
+let delegateLabel = "—";
+let resLabel = "—";
+let rendererLabel = "";
+let shownStatus = "";
+function renderStatus() {
+  const f = Math.round(fps);
+  const text = `${f} fps · ${delegateLabel} · ${resLabel}` + (fxQuality < 1 ? ` · FX ${Math.round(fxQuality * 100)}%` : "");
+  if (text === shownStatus) return; // only touch the DOM when it changes
+  shownStatus = text;
+  statusText.textContent = text;
+  statusChip.dataset.state = !fps ? "" : f >= 25 ? "good" : "warn";
+  statusChip.title = `Model inference ${inferMs.toFixed(1)} ms · render ${Math.round(rafFps)} fps` +
+    (rendererLabel ? ` · WebGL renderer: ${rendererLabel}` : "");
 }
 
 function updateStats(now, ms) {
@@ -474,10 +517,7 @@ function updateStats(now, ms) {
     // Exponential moving averages so the numbers don't jump around.
     fps = fps ? fps * 0.9 + (1000 / dt) * 0.1 : 1000 / dt;
     inferMs = inferMs ? inferMs * 0.9 + ms * 0.1 : ms;
-    fpsEl.textContent = fxQuality < 1
-      ? `${Math.round(fps)} FPS · FX ${Math.round(fxQuality * 100)}%`
-      : `${Math.round(fps)} FPS`;
-    inferEl.textContent = `${inferMs.toFixed(1)} ms`;
+    renderStatus();
   }
   lastFrameTime = now;
 }
@@ -495,7 +535,7 @@ function updateFxBudget(now) {
   if (rafFps < FX.lowFps) fxQuality = Math.max(FX.min, fxQuality * FX.down);
   else if (rafFps > FX.highFps) fxQuality = Math.min(1, fxQuality + FX.up);
   if (fxQuality !== prev) {
-    fpsEl.title = `Render ${Math.round(rafFps)} fps · effects at ${Math.round(fxQuality * 100)}%`;
+    renderStatus();
     console.info(`[HandLab] Render ${Math.round(rafFps)} fps -> effects quality ${Math.round(fxQuality * 100)}%`);
   }
 }
@@ -564,8 +604,9 @@ async function createLandmarker(delegate) {
   currentDelegate = delegate;
   const renderer = getWebGLRenderer();
   const software = /swiftshader|basic render|llvmpipe|software/i.test(renderer);
-  delegateEl.textContent = delegate === "GPU" && software ? "GPU (software!)" : delegate;
-  delegateEl.title = `WebGL renderer: ${renderer}`;
+  delegateLabel = delegate === "GPU" && software ? "GPU (software)" : delegate;
+  rendererLabel = renderer;
+  renderStatus();
   console.info(`[HandLab] HandLandmarker active delegate: ${delegate}`);
   if (delegate === "GPU") {
     console.info(`[HandLab] WebGL renderer: ${renderer}`);
@@ -604,7 +645,8 @@ async function startCamera() {
     c.width = video.videoWidth;
     c.height = video.videoHeight;
   }
-  resEl.textContent = `${video.videoWidth}×${video.videoHeight}`;
+  resLabel = `${video.videoWidth}×${video.videoHeight}`;
+  renderStatus();
   console.info(`[HandLab] Camera resolution: ${video.videoWidth}x${video.videoHeight}`);
   fitStage();
 }
@@ -678,6 +720,8 @@ async function init() {
   }
 
   hideMessage();
+  cameraRunning = true;
+  updateStageChips();
   requestAnimationFrame(loop);
 }
 

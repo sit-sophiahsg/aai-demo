@@ -4,295 +4,373 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hand Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body data-mode="draw">
-  <header class="toolbar">
-    <!-- Row 1: brand, mode switcher, stats -->
-    <div class="toolbar-row">
-      <div class="brand">
-        <span class="logo" aria-hidden="true">✋</span>
-        <span>Hand Lab</span>
-      </div>
+  <!-- Icon sprite: inline stroke icons, used with <svg><use href="#i-…"/></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0" /><path d="M14 10V4a2 2 0 0 0-4 0v2" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z" /></symbol>
+      <symbol id="i-backspace" viewBox="0 0 24 24"><path d="M10 5a2 2 0 0 0-1.34.52l-6.33 5.74a1 1 0 0 0 0 1.48l6.33 5.74A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><path d="m12 9 6 6" /><path d="m18 9-6 6" /></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16v-5" /><path d="M12 16V8" /><path d="M17 16v-3" /></symbol>
+      <symbol id="i-skip" viewBox="0 0 24 24"><path d="m6 4 10 8-10 8z" /><path d="M19 5v14" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9" /><path d="m7 14 5-5 5 5" /><path d="M5 3h14" /></symbol>
+    </defs>
+  </svg>
 
-      <nav class="mode-tabs" role="tablist" aria-label="Mode">
-        <button class="mode-tab active" data-mode="draw" role="tab" aria-selected="true"><kbd>1</kbd> Draw</button>
-        <button class="mode-tab" data-mode="game" role="tab" aria-selected="false"><kbd>2</kbd> Game</button>
-        <button class="mode-tab" data-mode="sign" role="tab" aria-selected="false"><kbd>3</kbd> Sign</button>
-      </nav>
-
-      <div class="status">
-        <span id="delegate" class="pill">—</span>
-        <span id="resolution" class="pill">—</span>
-        <span id="infer" class="pill">— ms</span>
-        <span id="fps" class="pill">0 FPS</span>
-      </div>
+  <!-- ===================== Header ===================== -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark"><svg class="icon"><use href="#i-hand" /></svg></span>
+      <span class="brand-text">
+        <span class="brand-name">Hand Lab</span>
+        <span class="brand-sub mono">MediaPipe · runs in your browser</span>
+      </span>
     </div>
 
-    <!-- Row 2: controls for the active mode (left) + global settings (right) -->
-    <div class="toolbar-row">
-      <div class="controls" data-for="draw">
-        <!-- Color swatches. data-color is read by modes/draw.js. Shift+1–6 picks them. -->
-        <div class="swatches" role="radiogroup" aria-label="Brush color">
-          <button class="swatch active" data-color="#22d3ee" style="--c:#22d3ee" title="Cyan (Shift+1)"></button>
-          <button class="swatch" data-color="#f472b6" style="--c:#f472b6" title="Pink (Shift+2)"></button>
-          <button class="swatch" data-color="#a3e635" style="--c:#a3e635" title="Lime (Shift+3)"></button>
-          <button class="swatch" data-color="#facc15" style="--c:#facc15" title="Yellow (Shift+4)"></button>
-          <button class="swatch" data-color="#f97316" style="--c:#f97316" title="Orange (Shift+5)"></button>
-          <button class="swatch" data-color="#ffffff" style="--c:#ffffff" title="White (Shift+6)"></button>
-        </div>
+    <nav class="mode-tabs" role="tablist" aria-label="Mode">
+      <button class="mode-tab active" data-mode="draw" role="tab" aria-selected="true">Draw <span class="key">1</span></button>
+      <button class="mode-tab" data-mode="game" role="tab" aria-selected="false">Game <span class="key">2</span></button>
+      <button class="mode-tab" data-mode="sign" role="tab" aria-selected="false">Sign <span class="key">3</span></button>
+    </nav>
 
-        <label class="slider">
-          <span>Brush</span>
-          <input id="brushSize" type="range" min="2" max="40" value="8" />
-          <output id="brushValue">8</output>
-        </label>
-
-        <!-- Off by default so a relaxed hand can never wipe your work -->
-        <label class="toggle" title="Hold a wide-open palm still for 1.5s to clear">
-          <input id="palmClear" type="checkbox" />
-          <span>Palm clear</span>
-        </label>
-
-        <button id="undoBtn" class="btn" title="Undo last stroke (U or Ctrl+Z)">Undo <kbd>U</kbd></button>
-        <button id="clearBtn" class="btn" title="Clear drawing (C)">Clear <kbd>C</kbd></button>
+    <div class="header-right">
+      <!-- One status chip: fps · delegate · camera resolution (+ FX nn% when effects are reduced) -->
+      <div id="statusChip" class="status-chip" role="status">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText" class="mono">starting…</span>
       </div>
-      <div class="controls" data-for="game" hidden>
-        <button id="gameStartBtn" class="btn" title="Start a new round (Space)">Start round <kbd>Space</kbd></button>
-        <span class="muted-text">or hold an open palm ✋ for 1 s</span>
-      </div>
-      <div class="controls" data-for="sign" hidden>
-        <div class="segmented" role="group" aria-label="Sign sub-mode">
-          <button id="signSpellBtn" class="seg active" title="Spell words">Spell</button>
-          <button id="signPracticeBtn" class="seg" title="Practice letters (P)">Practice <kbd>P</kbd></button>
-          <button id="signTrainBtn" class="seg" title="Record training data (T)">Train <kbd>T</kbd></button>
-        </div>
-        <span id="signSpellControls" class="controls-group">
-          <button id="signSpaceBtn" class="btn" title="Add a space (Space)">Space <kbd>Space</kbd></button>
-          <button id="signBackBtn" class="btn" title="Delete last letter (Backspace)">⌫ <kbd>Bksp</kbd></button>
-          <button id="signClearBtn" class="btn" title="Clear text (C)">Clear <kbd>C</kbd></button>
-        </span>
-        <button id="practiceNextBtn" class="btn" title="Skip to the next letter (N)" hidden>Skip <kbd>N</kbd></button>
-        <label class="slider" title="Which classifier recognises the letters">
-          <span>Classifier</span>
-          <select id="signClassifier" class="select">
-            <option value="rules">Rules</option>
-            <option value="knn">k-NN</option>
-            <option value="mlp">MLP</option>
-          </select>
-        </label>
-        <button id="signEvalBtn" class="btn" title="Compare Rules, k-NN and MLP on held-out data">Evaluate</button>
-        <label class="toggle" title="Show finger states, angles and letter scores (D)">
-          <input id="signDebugToggle" type="checkbox" />
-          <span>Debug <kbd>D</kbd></span>
-        </label>
-      </div>
-
-      <div class="controls global">
-        <label class="toggle" title="Glowing particle trails from the index fingertip (T)">
-          <input id="trails" type="checkbox" checked />
-          <span>Trails</span>
-        </label>
-        <label class="slider" title="Trail intensity">
-          <input id="trailIntensity" type="range" min="0.2" max="2" step="0.1" value="1" />
-          <output id="trailIntensityValue">100%</output>
-        </label>
-
-        <label class="toggle" title="Show/hide the hand skeleton (S)">
-          <input id="showSkeleton" type="checkbox" checked />
-          <span>Skeleton</span>
-        </label>
-
-        <!-- One Euro filter tuning (see gestures.js) -->
-        <details class="tuning">
-          <summary class="btn">Smoothing</summary>
-          <div class="tuning-panel">
-            <label class="slider" title="Lower = steadier when moving slowly, but more lag">
-              <span>Min cutoff</span>
-              <input id="minCutoff" type="range" min="0.1" max="5" step="0.1" value="1.0" />
-              <output id="minCutoffValue">1.0</output>
-            </label>
-            <label class="slider" title="Higher = less lag when moving fast">
-              <span>Beta</span>
-              <input id="beta" type="range" min="0" max="0.05" step="0.001" value="0.008" />
-              <output id="betaValue">0.008</output>
-            </label>
-          </div>
-        </details>
-      </div>
+      <!-- Reserved for the onboarding tutorial (Phase 4) -->
+      <button id="helpBtn" class="icon-btn" type="button" aria-label="Show tutorial" title="Show tutorial">?</button>
     </div>
   </header>
 
-  <!-- Stage: video + two canvases stacked on top of each other -->
-  <main id="stageWrap">
-    <div id="stage">
-      <!-- The raw webcam feed (mirrored with CSS so it feels like a mirror) -->
-      <video id="video" playsinline muted></video>
-      <!-- Persistent canvas: Draw-mode strokes live here until you clear -->
-      <canvas id="drawCanvas"></canvas>
-      <!-- Overlay canvas: wiped and redrawn every frame (skeleton, particles, cursor...) -->
-      <canvas id="overlay"></canvas>
-      <!-- Current state of the active mode (updated by main.js) -->
-      <div id="modeBadge" class="mode-badge" data-mode="NONE">NO HAND</div>
+  <!-- ===================== Main ===================== -->
+  <main class="app-main">
+    <section class="stage-col">
+      <div id="stageWrap">
+        <div id="stage">
+          <!-- The raw webcam feed (mirrored with CSS so it feels like a mirror) -->
+          <video id="video" playsinline muted></video>
+          <!-- Persistent canvas: Draw-mode strokes live here until you clear -->
+          <canvas id="drawCanvas"></canvas>
+          <!-- Overlay canvas: wiped and redrawn every frame (skeleton, particles, cursor...) -->
+          <canvas id="overlay"></canvas>
 
-      <!-- Game mode HUD + start / countdown / game-over card (modes/game.js) -->
-      <div class="game-layer" data-for="game" hidden>
-        <div class="game-hud">
-          <div class="hud-item"><span class="hud-label">Score</span><span id="hudScore" class="hud-value">0</span></div>
-          <div class="hud-item" id="hudTimeBox"><span class="hud-label">Time</span><span id="hudTime" class="hud-value">60</span></div>
-          <div class="hud-item"><span class="hud-label">Best</span><span id="hudBest" class="hud-value">0</span></div>
-        </div>
-        <div id="hudCombo" class="hud-combo">
-          <span id="hudComboText">x2</span>
-          <div class="combo-bar"><div id="hudComboBar"></div></div>
-        </div>
-        <div id="gameScreen" class="game-screen">
-          <h2 id="gameScreenTitle"></h2>
-          <p id="gameScreenText"></p>
+          <!-- Top-left: live state of the active mode. Top-right: detected hand + mirrored -->
+          <div class="video-chips">
+            <div id="modeBadge" class="chip state-chip" data-mode="NONE">
+              <span class="dot"></span><span id="modeBadgeText" class="mono">NO HAND</span>
+            </div>
+            <div class="chip-group">
+              <div id="handChip" class="chip mono" hidden>Right hand</div>
+              <div class="chip mono">Mirrored</div>
+            </div>
+          </div>
+
+          <!-- Shown when no hand is detected -->
+          <div id="emptyState" class="empty-state" hidden>
+            <div class="empty-ring"><svg class="icon"><use href="#i-hand" /></svg></div>
+            <h2>Raise your hand into the frame</h2>
+            <p>Keep it about an arm's length from the camera, in good light, palm facing the screen.</p>
+          </div>
+
+          <!-- Game: score / time / combo during a round + the start / countdown / game-over card (modes/game.js) -->
+          <div class="game-layer" data-for="game" hidden>
+            <div id="gameHud" class="game-hud" hidden>
+              <div class="hud-card"><span class="hud-label">Score</span><span id="hudScore" class="hud-value">0</span></div>
+              <div class="hud-card" id="hudTimeBox"><span class="hud-label">Time</span><span id="hudTime" class="hud-value">60</span></div>
+              <div class="hud-card combo" id="hudCombo">
+                <span class="hud-label">Combo</span><span id="hudComboText" class="hud-value">x1</span>
+                <div class="combo-bar"><div id="hudComboBar"></div></div>
+              </div>
+            </div>
+            <div id="gameScreen" class="game-screen">
+              <h2 id="gameScreenTitle"></h2>
+              <p id="gameScreenText"></p>
+            </div>
+          </div>
+
+          <!-- Loading / error screen, hidden once everything is running -->
+          <div id="message" class="message">
+            <div class="spinner" id="spinner"></div>
+            <h2 id="msgTitle">Loading hand model…</h2>
+            <p id="msgText">Downloading MediaPipe HandLandmarker. This takes a few seconds the first time.</p>
+          </div>
         </div>
       </div>
 
-      <!-- Sign mode: detected letter, practice card, debug panel, spelled text (modes/sign.js) -->
-      <div class="sign-layer" data-for="sign" hidden>
-        <div id="signLetterCard" class="sign-card">
-          <div id="signHoldRing" class="hold-ring">
-            <div id="signLetter" class="sign-letter faded">?</div>
+      <!-- Gesture legend for the current mode -->
+      <div class="legend" data-for="draw">
+        <div class="legend-item"><span class="tag">Index up</span><span>Draw</span></div>
+        <div class="legend-item"><span class="tag">Two fingers</span><span>Lift the pen and move</span></div>
+        <div class="legend-item"><span class="tag">U / C</span><span>Undo · Clear</span></div>
+      </div>
+      <div class="legend" data-for="game" hidden>
+        <div class="legend-item"><span class="tag">Fingertip</span><span>Touch a bubble to pop it</span></div>
+        <div class="legend-item"><span class="tag">Open palm 1s</span><span>Start or restart</span></div>
+        <div class="legend-item"><span class="tag">Both hands</span><span>Pop with either hand</span></div>
+      </div>
+      <div class="legend" data-for="sign" hidden>
+        <div class="legend-item"><span class="tag">Hold 0.8s</span><span>Type the letter</span></div>
+        <div class="legend-item"><span class="tag">Drop hand</span><span>Repeat a letter</span></div>
+        <div class="legend-item"><span class="tag">D</span><span>Debug panel</span></div>
+      </div>
+    </section>
+
+    <!-- ===================== Side panel: controls for the current mode ===================== -->
+    <aside id="sidePanel" class="side-panel" aria-label="Mode controls">
+
+      <!-- ---------- Draw ---------- -->
+      <div class="panel-stack" data-for="draw">
+        <section class="card">
+          <h3 class="card-label">Brush color</h3>
+          <!-- data-color is read by modes/draw.js. Shift+1–6 picks them. -->
+          <div class="swatches" role="radiogroup" aria-label="Brush color">
+            <button class="swatch active" data-color="#22d3ee" style="--c:#22d3ee" aria-label="Cyan (Shift+1)" title="Cyan (Shift+1)"></button>
+            <button class="swatch" data-color="#f472b6" style="--c:#f472b6" aria-label="Pink (Shift+2)" title="Pink (Shift+2)"></button>
+            <button class="swatch" data-color="#a3e635" style="--c:#a3e635" aria-label="Lime (Shift+3)" title="Lime (Shift+3)"></button>
+            <button class="swatch" data-color="#facc15" style="--c:#facc15" aria-label="Yellow (Shift+4)" title="Yellow (Shift+4)"></button>
+            <button class="swatch" data-color="#f97316" style="--c:#f97316" aria-label="Orange (Shift+5)" title="Orange (Shift+5)"></button>
+            <button class="swatch" data-color="#ffffff" style="--c:#ffffff" aria-label="White (Shift+6)" title="White (Shift+6)"></button>
           </div>
-          <div class="conf">
-            <div class="conf-bar"><div id="signConfBar" data-level="low"></div></div>
+          <label class="slider-row">
+            <span class="slider-head"><span>Brush size</span><output id="brushValue" class="mono">8 px</output></span>
+            <input id="brushSize" type="range" min="2" max="40" value="8" />
+          </label>
+        </section>
+
+        <section class="card">
+          <h3 class="card-label">Display</h3>
+          <label class="switch-row" title="Glowing particle trails from the index fingertip (T)">
+            <span>Particle trails</span>
+            <input id="trails" type="checkbox" class="switch" role="switch" checked />
+          </label>
+          <label class="slider-row sub">
+            <span class="slider-head"><span>Trail intensity</span><output id="trailIntensityValue" class="mono">100%</output></span>
+            <input id="trailIntensity" type="range" min="0.2" max="2" step="0.1" value="1" />
+          </label>
+          <label class="switch-row" title="Show/hide the hand skeleton (S)">
+            <span>Hand skeleton</span>
+            <input id="showSkeleton" type="checkbox" class="switch" role="switch" checked />
+          </label>
+          <!-- Off by default so a relaxed hand can never wipe your work -->
+          <label class="switch-row" title="Hold a wide-open palm still for 1.5 s to clear">
+            <span>Palm-hold clears canvas</span>
+            <input id="palmClear" type="checkbox" class="switch" role="switch" />
+          </label>
+        </section>
+
+        <div class="btn-row">
+          <button id="undoBtn" class="btn" title="Undo last stroke (U or Ctrl+Z)">
+            <svg class="icon"><use href="#i-undo" /></svg>Undo<kbd>U</kbd>
+          </button>
+          <button id="clearBtn" class="btn danger" title="Clear drawing (C)">
+            <svg class="icon"><use href="#i-trash" /></svg>Clear<kbd>C</kbd>
+          </button>
+        </div>
+
+        <!-- One Euro filter tuning (see gestures.js) -->
+        <details class="card advanced">
+          <summary><span class="card-label">Advanced</span><span class="muted small">Smoothing</span></summary>
+          <label class="slider-row" title="Lower = steadier when moving slowly, but more lag">
+            <span class="slider-head"><span>Min cutoff</span><output id="minCutoffValue" class="mono">1.0</output></span>
+            <input id="minCutoff" type="range" min="0.1" max="5" step="0.1" value="1.0" />
+          </label>
+          <label class="slider-row" title="Higher = less lag when moving fast">
+            <span class="slider-head"><span>Beta</span><output id="betaValue" class="mono">0.008</output></span>
+            <input id="beta" type="range" min="0" max="0.05" step="0.001" value="0.008" />
+          </label>
+        </details>
+      </div>
+
+      <!-- ---------- Game ---------- -->
+      <div class="panel-stack" data-for="game" hidden>
+        <section class="card">
+          <h3 class="card-label">Bubble Pop</h3>
+          <p class="lead">Pop as many bubbles as you can in 60 seconds.</p>
+          <div class="hint-box">
+            <svg class="icon"><use href="#i-hand" /></svg>
+            <span>Hold an open palm for 1 second to start a round.</span>
+          </div>
+          <button id="gameStartBtn" class="btn success wide" title="Start a new round (Space)">
+            <svg class="icon"><use href="#i-play" /></svg>Start round<kbd>Space</kbd>
+          </button>
+        </section>
+
+        <section class="card">
+          <h3 class="card-label">Bubbles</h3>
+          <div class="rows">
+            <div class="row"><span class="bubble normal" aria-hidden="true"></span><span>Normal</span><span class="mono">+10 to +20</span></div>
+            <div class="row"><span class="bubble gold" aria-hidden="true"></span><span>Gold</span><span class="mono amber">+50</span></div>
+            <div class="row"><span class="bubble bomb" aria-hidden="true"></span><span>Bomb <small class="muted">resets combo</small></span><span class="mono red">−30</span></div>
+            <div class="row best"><span>Best score</span><span id="hudBest" class="mono">0</span></div>
+          </div>
+          <p class="muted small">Quick pops within 1 s build a combo, up to x5.</p>
+        </section>
+      </div>
+
+      <!-- ---------- Sign ---------- -->
+      <div class="panel-stack" data-for="sign" hidden>
+        <div class="segmented full" role="group" aria-label="Sign sub-mode">
+          <button id="signSpellBtn" class="seg active" title="Spell words">Spell</button>
+          <button id="signPracticeBtn" class="seg" title="Practice letters (P)">Practice<kbd>P</kbd></button>
+          <button id="signTrainBtn" class="seg" title="Record training data (T)">Train<kbd>T</kbd></button>
+        </div>
+
+        <!-- Current letter: outer arc = confidence, inner arc = hold-to-type progress -->
+        <section id="signRingCard" class="card ring-card">
+          <div id="signLetterCard" class="ring-wrap">
+            <div id="signConfBar" class="conf-ring" data-level="low">
+              <div id="signHoldRing" class="hold-ring">
+                <div id="signLetter" class="sign-letter faded">?</div>
+              </div>
+            </div>
+          </div>
+          <div class="ring-meta mono">
             <span id="signConfText">no hand</span>
+            <span class="sep">·</span>
+            <span id="signClfTag">Rules</span>
           </div>
-          <div id="signClfTag" class="clf-tag">Rules</div>
-        </div>
+          <div class="segmented full" role="group" aria-label="Classifier">
+            <button class="seg" data-clf="rules" title="Hand-written rules (19 letters)">Rules</button>
+            <button class="seg" data-clf="knn" title="k-nearest neighbours on your recordings">k-NN</button>
+            <button class="seg" data-clf="mlp" title="Neural network trained on your recordings">MLP</button>
+          </div>
+        </section>
 
-        <div id="signPractice" class="practice-card" hidden>
-          <div class="practice-label">Make this sign</div>
+        <!-- Spell: typed text -->
+        <section id="signSpellControls" class="card">
+          <h3 class="card-label">Typed text</h3>
+          <div class="typed mono" aria-live="polite"><span id="signText"></span><span class="caret"></span></div>
+          <div class="btn-row three">
+            <button id="signSpaceBtn" class="btn" title="Add a space (Space)">Space</button>
+            <button id="signBackBtn" class="btn" title="Delete last letter (Backspace)"><svg class="icon"><use href="#i-backspace" /></svg>Delete</button>
+            <button id="signClearBtn" class="btn danger" title="Clear text (C)">Clear</button>
+          </div>
+        </section>
+
+        <!-- Practice -->
+        <section id="signPractice" class="card" hidden>
+          <h3 class="card-label">Make this sign</h3>
           <div class="practice-row">
-            <div id="practiceLetter" class="practice-letter">A</div>
-            <div id="practiceTick" class="practice-tick">✓</div>
+            <div id="practiceLetter" class="practice-letter mono">A</div>
+            <div id="practiceTick" class="practice-tick" aria-label="Matched"><svg class="icon"><use href="#i-check" /></svg></div>
           </div>
-          <p id="practiceDesc"></p>
+          <p id="practiceDesc" class="desc"></p>
           <p id="practiceNote" class="practice-note"></p>
-          <div id="practiceScore" class="practice-score">0 matched</div>
-        </div>
+          <div class="practice-foot">
+            <span id="practiceScore" class="mono muted">0 matched</span>
+            <button id="practiceNextBtn" class="btn" title="Skip to the next letter (N)" hidden>
+              <svg class="icon"><use href="#i-skip" /></svg>Skip<kbd>N</kbd>
+            </button>
+          </div>
+        </section>
 
-        <div id="signDebug" class="sign-debug" hidden></div>
+        <!-- Train: training data collection (modes/sign.js + sign/dataset.js) -->
+        <section id="trainPanel" class="card train" hidden>
+          <div class="card-head">
+            <h3 class="card-label">Training data</h3>
+            <span id="trainStorage" class="mono small muted"></span>
+          </div>
+          <label class="field">
+            <span>Signer</span>
+            <input id="trainSigner" type="text" maxlength="40" placeholder="Your name" autocomplete="off" />
+          </label>
 
-        <div class="sign-text"><span id="signText"></span><span class="caret"></span></div>
+          <div class="train-letter-row">
+            <div id="trainLetter" class="train-letter mono">A</div>
+            <p id="trainDesc" class="desc"></p>
+          </div>
+          <button id="trainRecordBtn" class="btn rec-btn wide" title="Hold to record (or hold R)">
+            <span class="rec-dot"></span>Hold to record<kbd>R</kbd>
+          </button>
+          <div id="trainStatus" class="status-line">Pick a letter, make the sign, then hold Record.</div>
+
+          <h4 class="sub-label">Samples per letter <span class="muted">· target 100 · ← → to change</span></h4>
+          <div id="trainGrid" class="sp-grid"></div>
+          <button id="trainDeleteBtn" class="btn danger wide">Delete all “A” samples</button>
+          <div id="trainTotal" class="mono small muted"></div>
+
+          <div class="btn-row">
+            <button id="trainExportBtn" class="btn" title="Download every sample as a JSON file"><svg class="icon"><use href="#i-download" /></svg>Export</button>
+            <button id="trainImportBtn" class="btn" title="Merge samples from an exported file (e.g. a friend's)"><svg class="icon"><use href="#i-upload" /></svg>Import</button>
+            <input id="trainImportFile" type="file" accept="application/json,.json" hidden />
+          </div>
+
+          <h4 class="sub-label">Samples per signer</h4>
+          <div id="trainSigners" class="sp-signers"></div>
+
+          <h4 class="sub-label">Models</h4>
+          <div class="inline-fields">
+            <label class="field compact">k-NN <i>k</i><input id="knnK" type="number" min="1" max="25" value="5" /></label>
+            <label class="field compact">Distance
+              <select id="knnMetric" class="select">
+                <option value="euclidean">Euclidean</option>
+                <option value="cosine">Cosine</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted small">k-NN uses every sample directly. Nothing to train.</p>
+          <div class="inline-fields">
+            <label class="field compact">MLP epochs<input id="mlpEpochs" type="number" min="5" max="200" value="40" /></label>
+            <button id="mlpTrainBtn" class="btn primary">Train MLP</button>
+          </div>
+          <div id="mlpStatus" class="status-line"></div>
+          <div id="mlpAccChart"></div>
+          <div id="mlpLossChart"></div>
+        </section>
+
+        <!-- Tools -->
+        <section class="card tools">
+          <button id="signEvalBtn" class="btn wide" title="Compare Rules, k-NN and MLP on held-out data">
+            <svg class="icon"><use href="#i-chart" /></svg>Evaluate classifiers
+          </button>
+          <label class="switch-row" title="Show finger states, angles and letter scores (D)">
+            <span>Debug panel <kbd>D</kbd></span>
+            <input id="signDebugToggle" type="checkbox" class="switch" role="switch" />
+          </label>
+        </section>
+
+        <!-- Debug (filled by modes/sign.js) -->
+        <section id="signDebug" class="card sign-debug" hidden></section>
       </div>
-
-      <!-- Loading / error screen, hidden once everything is running -->
-      <div id="message" class="message">
-        <div class="spinner" id="spinner"></div>
-        <h2 id="msgTitle">Loading hand model…</h2>
-        <p id="msgText">Downloading MediaPipe HandLandmarker. This takes a few seconds the first time.</p>
-      </div>
-    </div>
-
-    <!-- Sign mode > Train: training data collection (modes/sign.js + sign/dataset.js) -->
-    <aside id="trainPanel" class="side-panel" hidden>
-      <div class="sp-head">
-        <h3>Training data</h3>
-        <span id="trainStorage" class="sp-storage"></span>
-      </div>
-      <label class="sp-field">
-        <span>Signer</span>
-        <input id="trainSigner" type="text" maxlength="40" placeholder="Your name" autocomplete="off" />
-      </label>
-
-      <div class="sp-letter-row">
-        <div id="trainLetter" class="sp-letter">A</div>
-        <p id="trainDesc" class="sp-desc"></p>
-      </div>
-      <button id="trainRecordBtn" class="btn rec-btn" title="Hold to record (or hold R)">
-        <span class="rec-dot"></span> Hold to record <kbd>R</kbd>
-      </button>
-      <div id="trainStatus" class="sp-status">Pick a letter, make the sign, then hold Record.</div>
-
-      <div class="sp-sub">Samples per letter <span class="sp-muted">(target 100 · ← → to change)</span></div>
-      <div id="trainGrid" class="sp-grid"></div>
-      <button id="trainDeleteBtn" class="btn danger sp-wide">Delete all “A” samples</button>
-      <div id="trainTotal" class="sp-total"></div>
-
-      <div class="sp-row">
-        <button id="trainExportBtn" class="btn" title="Download every sample as a JSON file">Export JSON</button>
-        <button id="trainImportBtn" class="btn" title="Merge samples from an exported file (e.g. a friend's)">Import JSON</button>
-        <input id="trainImportFile" type="file" accept="application/json,.json" hidden />
-      </div>
-
-      <div class="sp-sub">Samples per signer</div>
-      <div id="trainSigners" class="sp-signers"></div>
-
-      <div class="sp-sub">Models</div>
-      <div class="sp-inline">
-        <label>k-NN <i>k</i> <input id="knnK" type="number" min="1" max="25" value="5" /></label>
-        <label>Distance
-          <select id="knnMetric" class="select">
-            <option value="euclidean">Euclidean</option>
-            <option value="cosine">Cosine</option>
-          </select>
-        </label>
-      </div>
-      <div class="sp-muted">k-NN uses every sample directly. Nothing to train.</div>
-      <div class="sp-inline">
-        <label>MLP epochs <input id="mlpEpochs" type="number" min="5" max="200" value="40" /></label>
-        <button id="mlpTrainBtn" class="btn primary">Train MLP</button>
-      </div>
-      <div id="mlpStatus" class="sp-status"></div>
-      <div id="mlpAccChart"></div>
-      <div id="mlpLossChart"></div>
     </aside>
   </main>
-
-  <footer class="hint">
-    <div class="hint-group" data-for="draw">
-      <span>☝ <b>Index finger</b> to draw</span>
-      <span>✌ <b>Index + middle</b> to move without drawing</span>
-      <span><kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>6</kbd> colors · <kbd>[</kbd> <kbd>]</kbd> brush</span>
-    </div>
-    <div class="hint-group" data-for="game" hidden>
-      <span>☝ <b>Touch bubbles</b> with an index fingertip (either hand)</span>
-      <span>★ <b>gold</b> +50 · 💣 <b>bomb</b> −30</span>
-      <span><b>Quick pops</b> build a combo (up to x5)</span>
-      <span>✋ <b>Open palm 1 s</b> or <kbd>Space</kbd> to start</span>
-    </div>
-    <div class="hint-group" data-for="sign" hidden>
-      <span>Letters: <b>A B C D F G H I K L O P Q R U V W X Y</b> (G/H sideways, P/Q down)</span>
-      <span><b>Hold steady ~0.8 s</b> to type a letter</span>
-      <span><b>J</b>: I-hand, draw a hook · <b>Z</b>: point, draw a Z</span>
-      <span>To repeat a letter, change pose or drop your hand briefly</span>
-      <span><kbd>Space</kbd> · <kbd>Bksp</kbd> · <kbd>C</kbd> clear · <kbd>P</kbd> practice · <kbd>T</kbd> train (hold <kbd>R</kbd> to record) · <kbd>D</kbd> debug</span>
-    </div>
-    <div class="hint-group">
-      <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> modes · <kbd>T</kbd> trails · <kbd>S</kbd> skeleton</span>
-    </div>
-  </footer>
 
   <!-- Sign > Evaluate: Rules vs k-NN vs MLP on held-out data (sign/eval-view.js) -->
   <div id="evalModal" class="modal" hidden>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="evalTitle">
       <div class="modal-head">
         <h2 id="evalTitle">Evaluate classifiers</h2>
-        <span id="evalData" class="muted-text"></span>
-        <button id="evalClose" class="btn">Close <kbd>Esc</kbd></button>
+        <span id="evalData" class="mono small muted"></span>
+        <button id="evalClose" class="btn">Close<kbd>Esc</kbd></button>
       </div>
       <div class="ev-controls">
-        <label>Split
+        <label class="field compact">Split
           <select id="evalSplit" class="select">
             <option value="random">Random 80/20</option>
             <option value="time">Time-blocked 80/20</option>
           </select>
         </label>
-        <label>k <input id="evalK" type="number" min="1" max="25" value="5" /></label>
-        <label>Distance
+        <label class="field compact">k<input id="evalK" type="number" min="1" max="25" value="5" /></label>
+        <label class="field compact">Distance
           <select id="evalMetric" class="select">
             <option value="euclidean">Euclidean</option>
             <option value="cosine">Cosine</option>
           </select>
         </label>
-        <label>MLP epochs <input id="evalEpochs" type="number" min="5" max="200" value="40" /></label>
+        <label class="field compact">MLP epochs<input id="evalEpochs" type="number" min="5" max="200" value="40" /></label>
         <button id="evalRun" class="btn primary">Run evaluation</button>
-        <span id="evalStatus" class="muted-text"></span>
+        <span id="evalStatus" class="mono small muted"></span>
       </div>
       <p class="ev-caption">
         <b>Random</b> mixes neighbouring, nearly identical frames into both train and test, so it

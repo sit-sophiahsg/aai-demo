@@ -82,7 +82,7 @@ let popupScale = 0;
 let popupFont = "";
 
 // ---- DOM (HUD + screens) ----
-let hudScore, hudTime, hudBest, hudCombo, hudComboText, hudComboBar, hudTimeBox;
+let hudScore, hudTime, hudBest, hudCombo, hudComboText, hudComboBar, hudTimeBox, gameHud;
 let screenEl, screenTitle, screenText;
 const shown = { score: -1, time: -1, best: -1, combo: -1, screen: "" };
 
@@ -124,6 +124,44 @@ function distToSegment(p, a, b) {
 //  Sprites: each bubble look is drawn ONCE to a 128px offscreen canvas
 // =============================================================================
 
+// Vector marks drawn into the sprites (no emoji/font glyphs, so they look
+// the same on every system).
+function drawStar(g, cx, cy, outer, inner) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? inner : outer;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  g.closePath();
+  g.fillStyle = "#fff";
+  g.fill();
+}
+
+function drawBomb(g, cx, cy) {
+  // body
+  g.beginPath();
+  g.arc(cx, cy + 6, 22, 0, Math.PI * 2);
+  g.fillStyle = "#14161c";
+  g.fill();
+  // cap
+  g.fillStyle = "#14161c";
+  g.fillRect(cx + 8, cy - 20, 12, 10);
+  // fuse
+  g.beginPath();
+  g.moveTo(cx + 14, cy - 20);
+  g.quadraticCurveTo(cx + 20, cy - 34, cx + 30, cy - 30);
+  g.strokeStyle = "#e8ecf2";
+  g.lineWidth = 4;
+  g.lineCap = "round";
+  g.stroke();
+  // spark
+  g.beginPath();
+  g.arc(cx + 31, cy - 31, 6, 0, Math.PI * 2);
+  g.fillStyle = "#f5b83d";
+  g.fill();
+}
+
 function makeSprite(color, kind) {
   const S = 128, h = S / 2;
   const c = document.createElement("canvas");
@@ -157,11 +195,8 @@ function makeSprite(color, kind) {
     }
     g.fillStyle = grad;
     g.fill();
-    g.fillStyle = "#fff";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.font = kind === "gold" ? "bold 64px system-ui, sans-serif" : "56px 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
-    g.fillText(kind === "gold" ? "★" : "💣", h, h + 4);
+    if (kind === "gold") drawStar(g, h, h + 3, h * 0.42, h * 0.18);
+    else drawBomb(g, h, h);
   }
 
   // Specular highlight (upper-left shine)
@@ -356,21 +391,24 @@ function updateHud(now) {
   }
   if (shown.best !== best) hudBest.textContent = shown.best = best;
 
+  // Score / time / combo cards on the video only during a round.
+  const inRound = state === "PLAYING" || state === "COUNTDOWN";
+  if (shown.hud !== inRound) gameHud.hidden = !(shown.hud = inRound);
+
   const showCombo = state === "PLAYING" && combo > 1;
   if (shown.combo !== (showCombo ? combo : 0)) {
     shown.combo = showCombo ? combo : 0;
     hudCombo.classList.toggle("show", showCombo);
-    hudComboText.textContent = `x${combo}`;
+    hudComboText.textContent = `x${showCombo ? combo : 1}`;
   }
-  if (showCombo) {
-    const left = 1 - (gameTime - lastPopTime) / CONFIG.comboWindow;
-    hudComboBar.style.transform = `scaleX(${Math.max(0, left)})`;
-  }
+  // The bar under the combo shows how long you have left to keep it going.
+  const left = showCombo ? Math.max(0, 1 - (gameTime - lastPopTime) / CONFIG.comboWindow) : 0;
+  hudComboBar.style.transform = `scaleX(${left.toFixed(3)})`;
 
-  const palmHint = "Hold an <b>open palm ✋</b> for 1 second to start, or press <kbd>Space</kbd>";
+  const palmHint = "Hold an <b>open palm</b> for 1 second to start, or press <kbd>Space</kbd>";
   if (state === "READY") {
     setScreen("ready", "Bubble Pop",
-      `${palmHint}<br><span class="muted">Pop bubbles with your index fingertip · ★ = +50 · 💣 = −30 · quick pops build a combo</span>`);
+      `${palmHint}<br><span class="muted">Pop bubbles with your index fingertip. Gold +50, bomb −30, quick pops build a combo.</span>`);
   } else if (state === "COUNTDOWN") {
     const n = CONFIG.countdownSeconds - Math.floor((now - stateStart) / 1000);
     setScreen(`cd${n}`, String(Math.max(n, 1)), "Get ready!");
@@ -379,8 +417,8 @@ function updateHud(now) {
     else setScreen("", "", "");
   } else if (state === "OVER") {
     setScreen(`over${score}`, "Game over",
-      `Score <b>${score}</b> · ${newBest ? "🎉 <b>New high score!</b>" : `Best ${best}`}<br>` +
-        `<span class="muted">Open palm ✋ or <kbd>Space</kbd> to play again</span>`);
+      `Score <b>${score}</b> · ${newBest ? "<b>New high score!</b>" : `Best ${best}`}<br>` +
+        `<span class="muted">Open palm or <kbd>Space</kbd> to play again</span>`);
   }
 }
 
@@ -401,6 +439,7 @@ export const gameMode = {
 
     const $ = (id) => document.getElementById(id);
     hudScore = $("hudScore");
+    gameHud = $("gameHud");
     hudTime = $("hudTime");
     hudTimeBox = $("hudTimeBox");
     hudBest = $("hudBest");
@@ -524,11 +563,13 @@ export const gameMode = {
   trailColor(hand) { return app.handColors[hand.label]; },
   labelSuffix() { return ""; },
 
+  // keepWhenNoHand: during a round the chip keeps showing the game state
+  // even if the hand briefly leaves the frame.
   badge() {
-    if (state === "PLAYING") return { text: "PLAYING", tone: "DRAW" };
-    if (state === "COUNTDOWN") return { text: "GET READY", tone: "HOVER" };
+    if (state === "PLAYING") return { text: "PLAYING", tone: "DRAW", keepWhenNoHand: true };
+    if (state === "COUNTDOWN") return { text: "GET READY", tone: "WARN", keepWhenNoHand: true };
     if (state === "OVER") return { text: "GAME OVER", tone: "NONE" };
-    return { text: "READY", tone: "NONE" };
+    return { text: "READY", tone: "HOVER" };
   },
 
   onKey(e) {

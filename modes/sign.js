@@ -10,7 +10,7 @@
 //
 //  This file is the UI around them. Three sub-modes:
 //    SPELL     hold a letter ~0.8 s to type it
-//    PRACTICE  a target letter + description, ✓ when you match it
+//    PRACTICE  a target letter + description, a tick when you match it
 //    TRAIN     record labelled landmark samples for the learned models
 // =============================================================================
 
@@ -75,7 +75,7 @@ let practiceEl, practiceLetterEl, practiceDescEl, practiceScoreEl, practiceTickE
 let debugEl, spellBtn, practiceBtn, trainBtn, nextBtn, debugToggle, spellControls;
 let trainPanel, trainLetterEl, trainDescEl, trainGrid, trainStatus, trainSigner, trainSigners,
   trainTotal, trainStorage, trainDeleteBtn, trainRecordBtn, trainImportFile;
-let classifierSel, clfTag, mlpTrainBtn, mlpStatus, mlpAccChart, mlpLossChart, knnKInput, knnMetricSel, mlpEpochsInput;
+let clfButtons, ringCard, clfTag, mlpTrainBtn, mlpStatus, mlpAccChart, mlpLossChart, knnKInput, knnMetricSel, mlpEpochsInput;
 const gridButtons = {};
 const shown = { letter: null, faded: null, text: null };
 
@@ -100,7 +100,7 @@ function loadClassifierChoice() {
 function setClassifier(next) {
   kind = clf.KINDS.includes(next) ? next : "rules";
   try { localStorage.setItem(CLASSIFIER_KEY, kind); } catch { /* not persisted */ }
-  classifierSel.value = kind;
+  clfButtons.forEach((b) => b.classList.toggle("active", b.dataset.clf === kind));
   clfTag.textContent = clf.KIND_NAMES[kind];
   stable.reset("");
   heldLetter = "";
@@ -113,7 +113,7 @@ function setClassifier(next) {
 function updateMlpStatus() {
   const { state, error, summary } = clf.mlpInfo();
   if (state === "training") return; // the training loop writes its own progress
-  if (state === "error") mlpStatus.textContent = `⚠ ${error}`;
+  if (state === "error") mlpStatus.textContent = `Error: ${error}`;
   else if (summary?.trainedAt) {
     mlpStatus.textContent = `Saved model: ${summary.samples} samples, ${summary.epochs} epochs` +
       (summary.valAcc != null ? `, validation accuracy ${Math.round(summary.valAcc * 100)}%` : "") +
@@ -148,7 +148,7 @@ async function trainMlp() {
       },
     });
     updateMlpStatus();
-    mlpStatus.textContent = `✓ Trained and saved. ` + mlpStatus.textContent.replace(/^Saved model: /, "");
+    mlpStatus.textContent = `Trained and saved. ` + mlpStatus.textContent.replace(/^Saved model: /, "");
     if (meta && kind !== "mlp") mlpStatus.textContent += " Select “MLP” as the classifier to use it.";
   } catch (err) {
     mlpStatus.textContent = `Training failed: ${err.message}`;
@@ -171,7 +171,7 @@ function accept(letter, now) {
     if (letter === practiceTarget && !practiceNextAt) {
       practiceMatched++;
       practiceTickEl.classList.add("show");
-      practiceNote.textContent = "Nice! ✓";
+      practiceNote.textContent = "Nice!";
       practiceScoreEl.textContent = `${practiceMatched} matched`;
       practiceNextAt = now + 1200;
     } else if (!practiceNextAt) {
@@ -216,6 +216,7 @@ function setSub(next) {
   practiceBtn.classList.toggle("active", sub === "practice");
   trainBtn.classList.toggle("active", sub === "train");
   practiceEl.hidden = sub !== "practice";
+  ringCard.hidden = sub === "train"; // Train has its own panel; the letter ring is for Spell/Practice
   nextBtn.hidden = sub !== "practice";
   spellControls.hidden = sub !== "spell";
   textEl.parentElement.hidden = sub !== "spell";
@@ -327,7 +328,7 @@ function refreshTrainPanel() {
     : `<div class="sp-muted">No samples yet</div>`;
   const done = STATIC_LETTERS.filter((l) => c.byLetter[l] >= TARGET_PER_LETTER).length;
   trainTotal.textContent = `${c.total} samples · ${done}/${STATIC_LETTERS.length} letters at ${TARGET_PER_LETTER}+`;
-  trainStorage.textContent = dataset.isPersistent() ? "Saved in this browser" : "⚠ Not saved: export to keep";
+  trainStorage.textContent = dataset.isPersistent() ? "Saved in this browser" : "Not saved: export to keep";
   trainStorage.classList.toggle("warn", !dataset.isPersistent());
 }
 
@@ -520,9 +521,10 @@ export const signMode = {
     });
 
     // Classifier selector + Evaluate window
-    classifierSel = $("signClassifier");
+    clfButtons = [...document.querySelectorAll("[data-clf]")];
+    ringCard = $("signRingCard");
     clfTag = $("signClfTag");
-    classifierSel.addEventListener("change", () => setClassifier(classifierSel.value));
+    clfButtons.forEach((b) => b.addEventListener("click", () => setClassifier(b.dataset.clf)));
     initEvalView();
     $("signEvalBtn").addEventListener("click", () => { stopRecording(); openEvalView(); });
 
@@ -657,7 +659,7 @@ export const signMode = {
     }
     const conf = bestLetter ? bestConf : 0;
     const th = clf.THRESHOLDS[kind];
-    confBar.style.transform = `scaleX(${conf.toFixed(3)})`;
+    confBar.style.setProperty("--c", conf.toFixed(3)); // the outer ring arc
     confBar.dataset.level = conf >= th.accept ? "high" : conf >= th.min ? "mid" : "low";
     confText.textContent = !bestHand ? "no hand" : drawing ? "drawing…" : !bestReady ? bestNote : `${Math.round(conf * 100)}%`;
     holdRing.style.setProperty("--p", holdProgress.toFixed(3));
@@ -677,8 +679,9 @@ export const signMode = {
 
   badge() {
     if (sub === "train") return { text: recording ? `REC ${trainLetter}` : `TRAIN ${trainLetter}`, tone: recording ? "REC" : "HOVER" };
-    if (motion.inProgress) return { text: `DRAWING ${motion.shape === "I" ? "J" : "Z"}`, tone: "DRAW" };
-    return { text: sub === "practice" ? "PRACTICE" : "SPELL", tone: heldLetter ? "DRAW" : "HOVER" };
+    if (motion.inProgress) return { text: `DRAWING ${motion.shape === "I" ? "J" : "Z"}`, tone: "WARN" };
+    const shownLetter = heldLetter || bestLetter;
+    return shownLetter ? { text: `LETTER ${shownLetter}`, tone: heldLetter ? "DRAW" : "HOVER" } : { text: "NO LETTER", tone: "HOVER" };
   },
 
   onKey(e) {
