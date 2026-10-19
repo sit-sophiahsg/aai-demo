@@ -96,6 +96,18 @@ let fps = 0;
 let inferMs = 0;
 let trailIntensity = 1;
 
+// ADAPTIVE EFFECTS BUDGET
+// fxQuality (0.25..1) scales particle emission and the particle cap. Once a
+// second we look at the RENDER rate (how often requestAnimationFrame fires,
+// which doesn't depend on the camera's frame rate). If rendering falls
+// behind, effects are cut back; when it's smooth again they slowly return.
+// So weaker GPUs get fewer particles instead of a stuttering app.
+const FX = { lowFps: 45, highFps: 55, min: 0.25, down: 0.7, up: 0.1 };
+let fxQuality = 1;
+let rafFps = 60;
+let lastRaf = 0;
+let fxCheckAt = 0;
+
 // One Euro settings shared by every fingertip filter (sliders edit these).
 const filterConfig = { minCutoff: 1.0, beta: 0.008 };
 
@@ -339,9 +351,12 @@ function drawCenterText(title, subtitle) {
 // New particles are spread along the path the fingertip took this frame,
 // so fast moves leave a continuous trail instead of clumps.
 function emitTrail(hand, color, dt) {
-  const rate = (TRAIL.baseRate + hand.speed * TRAIL.speedRate) * trailIntensity;
+  const rate = (TRAIL.baseRate + hand.speed * TRAIL.speedRate) * trailIntensity * fxQuality;
   hand.emitAcc += rate * dt;
-  const n = Math.min(Math.floor(hand.emitAcc), TRAIL.maxPerFrame);
+  // Trails may only fill part of the pool (scaled by fxQuality), which also
+  // leaves room for bursts such as bubble pops.
+  const room = Math.floor(TRAIL.capacity * 0.85 * fxQuality) - particles.count;
+  const n = Math.max(0, Math.min(Math.floor(hand.emitAcc), TRAIL.maxPerFrame, room));
   hand.emitAcc -= Math.floor(hand.emitAcc);
   const s = pxScale();
   const { tip, prevTip } = hand;
@@ -449,10 +464,30 @@ function updateStats(now, ms) {
     // Exponential moving averages so the numbers don't jump around.
     fps = fps ? fps * 0.9 + (1000 / dt) * 0.1 : 1000 / dt;
     inferMs = inferMs ? inferMs * 0.9 + ms * 0.1 : ms;
-    fpsEl.textContent = `${Math.round(fps)} FPS`;
+    fpsEl.textContent = fxQuality < 1
+      ? `${Math.round(fps)} FPS · FX ${Math.round(fxQuality * 100)}%`
+      : `${Math.round(fps)} FPS`;
     inferEl.textContent = `${inferMs.toFixed(1)} ms`;
   }
   lastFrameTime = now;
+}
+
+// Called on every requestAnimationFrame (see loop()).
+function updateFxBudget(now) {
+  if (lastRaf) {
+    const d = now - lastRaf;
+    if (d > 0 && d < 500) rafFps = rafFps * 0.9 + (1000 / d) * 0.1;
+  }
+  lastRaf = now;
+  if (now - fxCheckAt < 1000) return;
+  fxCheckAt = now;
+  const prev = fxQuality;
+  if (rafFps < FX.lowFps) fxQuality = Math.max(FX.min, fxQuality * FX.down);
+  else if (rafFps > FX.highFps) fxQuality = Math.min(1, fxQuality + FX.up);
+  if (fxQuality !== prev) {
+    fpsEl.title = `Render ${Math.round(rafFps)} fps · effects at ${Math.round(fxQuality * 100)}%`;
+    console.info(`[HandLab] Render ${Math.round(rafFps)} fps -> effects quality ${Math.round(fxQuality * 100)}%`);
+  }
 }
 
 // The main loop. requestAnimationFrame fires before every screen repaint
@@ -460,6 +495,7 @@ function updateStats(now, ms) {
 // video.currentTime means we only run the model on a NEW camera frame, and
 // skip repaints where nothing changed.
 async function loop() {
+  updateFxBudget(performance.now());
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const now = performance.now();
@@ -584,6 +620,7 @@ function cameraErrorMessage(err) {
 // Shared helpers handed to every mode.
 const app = {
   overlay, octx, drawCanvas, particles, pxScale,
+  fxQuality: () => fxQuality, // 0.25..1, modes scale their effects by it
   handColors: HAND_COLORS,
   drawHoldRing, drawCenterText,
 };

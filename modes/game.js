@@ -78,6 +78,8 @@ const popups = Array.from({ length: POPUP_POOL_SIZE }, () => ({
   alive: false, x: 0, y: 0, r: 0, text: "", color: "", life: 0, max: 0,
 }));
 const sprites = {};
+let popupScale = 0;
+let popupFont = "";
 
 // ---- DOM (HUD + screens) ----
 let hudScore, hudTime, hudBest, hudCombo, hudComboText, hudComboBar, hudTimeBox;
@@ -258,7 +260,7 @@ function pop(b) {
     combo = 0;
     flash = 0.35;
     addPopup(b.x, b.y, b.r, `${CONFIG.points.bomb}`, BOMB);
-    app.particles.burst(b.x, b.y, BOMB, 30, H * 0.7, 5 * s, 0.7);
+    app.particles.burst(b.x, b.y, BOMB, Math.ceil(30 * app.fxQuality()), H * 0.7, 5 * s, 0.7);
     return;
   }
 
@@ -277,7 +279,9 @@ function pop(b) {
   pts *= combo;
   score += pts;
   addPopup(b.x, b.y, b.r, combo > 1 ? `+${pts} x${combo}` : `+${pts}`, b.color);
-  app.particles.burst(b.x, b.y, b.color, b.kind === "gold" ? 28 : 16, H * 0.5, 4 * s, 0.6);
+  // Burst size follows the adaptive effects budget (see main.js).
+  const n = Math.ceil((b.kind === "gold" ? 28 : 16) * app.fxQuality());
+  app.particles.burst(b.x, b.y, b.color, n, H * 0.5, 4 * s, 0.6);
 }
 
 function updateBubbles(dt, hands, canPop) {
@@ -463,6 +467,10 @@ export const gameMode = {
 
   render(ctx, hands, now) {
     const s = app.pxScale();
+    if (s !== popupScale) {
+      popupScale = s;
+      popupFont = `800 ${18 * s}px system-ui, sans-serif`; // rebuilt only on resize
+    }
 
     for (const b of bubbles) {
       if (!b.alive) continue;
@@ -474,6 +482,7 @@ export const gameMode = {
     // Pop feedback: an expanding ring + floating score text.
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.font = popupFont; // set once: parsing a font string per popup is wasteful
     for (const p of popups) {
       if (!p.alive) continue;
       const t = 1 - p.life / p.max; // 0 -> 1
@@ -485,7 +494,6 @@ export const gameMode = {
         ctx.strokeStyle = p.color;
         ctx.stroke();
       }
-      ctx.font = `800 ${18 * s}px system-ui, sans-serif`;
       ctx.fillStyle = p.color;
       ctx.fillText(p.text, p.x, p.y - t * 40 * s);
     }

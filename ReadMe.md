@@ -104,6 +104,9 @@ the camera resolution, model inference time and FPS.
   so they're swapped back (`SWAP_HANDEDNESS` in `main.js`).
 - **Performance:** the camera runs at 640×480, and the model only runs when there's a new video frame.
   It uses the GPU delegate and falls back to CPU if that fails. The active delegate is logged to the console.
+  An **adaptive effects budget** watches the render rate. If it drops below 45 fps, particle
+  trails and bursts are scaled back (down to 25%), and they slowly return when it's smooth again.
+  When the budget is active, the FPS pill shows `FX nn%`.
 
 ## Files
 

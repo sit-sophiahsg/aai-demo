@@ -235,9 +235,8 @@ kbd {
   font-weight: 700;
   letter-spacing: 0.8px;
   color: var(--muted);
-  background: rgba(11, 13, 18, 0.7);
+  background: rgba(11, 13, 18, 0.85);
   border: 1px solid var(--border);
-  backdrop-filter: blur(4px);
   pointer-events: none;
 }
 .mode-badge[data-mode="DRAW"] { color: #0b0d12; background: #a3e635; border-color: #a3e635; }
@@ -268,9 +267,8 @@ kbd {
   min-width: 74px;
   padding: 6px 14px;
   border-radius: 10px;
-  background: rgba(11, 13, 18, 0.72);
+  background: rgba(11, 13, 18, 0.85);
   border: 1px solid var(--border);
-  backdrop-filter: blur(4px);
 }
 .hud-label {
   font-size: 10px;
@@ -328,14 +326,20 @@ kbd {
   padding: 18px 22px;
   text-align: center;
   border-radius: 14px;
-  background: rgba(11, 13, 18, 0.78);
+  background: rgba(11, 13, 18, 0.88);
   border: 1px solid var(--border);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
   opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
+  /* visibility:hidden (after the fade) takes it out of compositing entirely */
+  visibility: hidden;
+  transition: opacity 0.2s, transform 0.2s, visibility 0s linear 0.2s;
 }
-.game-screen.show { opacity: 1; transform: translate(-50%, 0); }
+.game-screen.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s;
+}
 .game-screen h2 { margin: 0 0 6px; font-size: 34px; font-weight: 900; }
 .game-screen p { margin: 0; line-height: 1.6; color: var(--text); }
 .game-screen .muted { color: var(--muted); font-size: 13px; }

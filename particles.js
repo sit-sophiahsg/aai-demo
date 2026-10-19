@@ -19,7 +19,9 @@
 //  particles get brighter, like real light.
 // =============================================================================
 
-const SPRITE_SIZE = 64;
+// Particles are only ~5-25 px on screen, so a 32 px sprite is plenty and
+// is cheaper for the GPU to sample than a bigger one.
+const SPRITE_SIZE = 32;
 
 export class ParticleSystem {
   constructor(capacity = 300) {
