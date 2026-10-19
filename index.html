@@ -3,71 +3,98 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hand Tracking Air Draw</title>
+  <title>Hand Lab</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-  <!-- Top bar: title, drawing controls, status -->
+<body data-mode="draw">
   <header class="toolbar">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">✋</span>
-      <span>Air Draw</span>
-    </div>
-
-    <div class="controls">
-      <!-- Color swatches. data-color is read by main.js. Keys 1–6 also pick them. -->
-      <div class="swatches" role="radiogroup" aria-label="Brush color">
-        <button class="swatch active" data-color="#22d3ee" style="--c:#22d3ee" title="Cyan (1)"></button>
-        <button class="swatch" data-color="#f472b6" style="--c:#f472b6" title="Pink (2)"></button>
-        <button class="swatch" data-color="#a3e635" style="--c:#a3e635" title="Lime (3)"></button>
-        <button class="swatch" data-color="#facc15" style="--c:#facc15" title="Yellow (4)"></button>
-        <button class="swatch" data-color="#f97316" style="--c:#f97316" title="Orange (5)"></button>
-        <button class="swatch" data-color="#ffffff" style="--c:#ffffff" title="White (6)"></button>
+    <!-- Row 1: brand, mode switcher, stats -->
+    <div class="toolbar-row">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">✋</span>
+        <span>Hand Lab</span>
       </div>
 
-      <label class="slider">
-        <span>Brush</span>
-        <input id="brushSize" type="range" min="2" max="40" value="8" />
-        <output id="brushValue">8</output>
-      </label>
+      <nav class="mode-tabs" role="tablist" aria-label="Mode">
+        <button class="mode-tab active" data-mode="draw" role="tab" aria-selected="true"><kbd>1</kbd> Draw</button>
+        <button class="mode-tab" data-mode="game" role="tab" aria-selected="false"><kbd>2</kbd> Game</button>
+        <button class="mode-tab" data-mode="sign" role="tab" aria-selected="false"><kbd>3</kbd> Sign</button>
+      </nav>
 
-      <label class="toggle" title="Show/hide the hand skeleton (S)">
-        <input id="showSkeleton" type="checkbox" checked />
-        <span>Skeleton</span>
-      </label>
-
-      <!-- Off by default so a relaxed hand can never wipe your work -->
-      <label class="toggle" title="Hold a wide-open palm still for 1.5s to clear">
-        <input id="palmClear" type="checkbox" />
-        <span>Palm clear</span>
-      </label>
-
-      <!-- One Euro filter tuning (see main.js) -->
-      <details class="tuning">
-        <summary class="btn">Smoothing</summary>
-        <div class="tuning-panel">
-          <label class="slider" title="Lower = steadier when moving slowly, but more lag">
-            <span>Min cutoff</span>
-            <input id="minCutoff" type="range" min="0.1" max="5" step="0.1" value="1.0" />
-            <output id="minCutoffValue">1.0</output>
-          </label>
-          <label class="slider" title="Higher = less lag when moving fast">
-            <span>Beta</span>
-            <input id="beta" type="range" min="0" max="0.05" step="0.001" value="0.008" />
-            <output id="betaValue">0.008</output>
-          </label>
-        </div>
-      </details>
-
-      <button id="undoBtn" class="btn" title="Undo last stroke (U or Ctrl+Z)">Undo <kbd>U</kbd></button>
-      <button id="clearBtn" class="btn" title="Clear drawing (C)">Clear <kbd>C</kbd></button>
+      <div class="status">
+        <span id="delegate" class="pill">—</span>
+        <span id="resolution" class="pill">—</span>
+        <span id="infer" class="pill">— ms</span>
+        <span id="fps" class="pill">0 FPS</span>
+      </div>
     </div>
 
-    <div class="status">
-      <span id="delegate" class="pill">—</span>
-      <span id="resolution" class="pill">—</span>
-      <span id="infer" class="pill">— ms</span>
-      <span id="fps" class="pill">0 FPS</span>
+    <!-- Row 2: controls for the active mode (left) + global settings (right) -->
+    <div class="toolbar-row">
+      <div class="controls" data-for="draw">
+        <!-- Color swatches. data-color is read by modes/draw.js. Shift+1–6 picks them. -->
+        <div class="swatches" role="radiogroup" aria-label="Brush color">
+          <button class="swatch active" data-color="#22d3ee" style="--c:#22d3ee" title="Cyan (Shift+1)"></button>
+          <button class="swatch" data-color="#f472b6" style="--c:#f472b6" title="Pink (Shift+2)"></button>
+          <button class="swatch" data-color="#a3e635" style="--c:#a3e635" title="Lime (Shift+3)"></button>
+          <button class="swatch" data-color="#facc15" style="--c:#facc15" title="Yellow (Shift+4)"></button>
+          <button class="swatch" data-color="#f97316" style="--c:#f97316" title="Orange (Shift+5)"></button>
+          <button class="swatch" data-color="#ffffff" style="--c:#ffffff" title="White (Shift+6)"></button>
+        </div>
+
+        <label class="slider">
+          <span>Brush</span>
+          <input id="brushSize" type="range" min="2" max="40" value="8" />
+          <output id="brushValue">8</output>
+        </label>
+
+        <!-- Off by default so a relaxed hand can never wipe your work -->
+        <label class="toggle" title="Hold a wide-open palm still for 1.5s to clear">
+          <input id="palmClear" type="checkbox" />
+          <span>Palm clear</span>
+        </label>
+
+        <button id="undoBtn" class="btn" title="Undo last stroke (U or Ctrl+Z)">Undo <kbd>U</kbd></button>
+        <button id="clearBtn" class="btn" title="Clear drawing (C)">Clear <kbd>C</kbd></button>
+      </div>
+      <div class="controls" data-for="game" hidden>
+        <button id="gameStartBtn" class="btn" title="Start a new round (Space)">Start round <kbd>Space</kbd></button>
+        <span class="muted-text">or hold an open palm ✋ for 1 s</span>
+      </div>
+      <div class="controls" data-for="sign" hidden></div>
+
+      <div class="controls global">
+        <label class="toggle" title="Glowing particle trails from the index fingertip (T)">
+          <input id="trails" type="checkbox" checked />
+          <span>Trails</span>
+        </label>
+        <label class="slider" title="Trail intensity">
+          <input id="trailIntensity" type="range" min="0.2" max="2" step="0.1" value="1" />
+          <output id="trailIntensityValue">100%</output>
+        </label>
+
+        <label class="toggle" title="Show/hide the hand skeleton (S)">
+          <input id="showSkeleton" type="checkbox" checked />
+          <span>Skeleton</span>
+        </label>
+
+        <!-- One Euro filter tuning (see gestures.js) -->
+        <details class="tuning">
+          <summary class="btn">Smoothing</summary>
+          <div class="tuning-panel">
+            <label class="slider" title="Lower = steadier when moving slowly, but more lag">
+              <span>Min cutoff</span>
+              <input id="minCutoff" type="range" min="0.1" max="5" step="0.1" value="1.0" />
+              <output id="minCutoffValue">1.0</output>
+            </label>
+            <label class="slider" title="Higher = less lag when moving fast">
+              <span>Beta</span>
+              <input id="beta" type="range" min="0" max="0.05" step="0.001" value="0.008" />
+              <output id="betaValue">0.008</output>
+            </label>
+          </div>
+        </details>
+      </div>
     </div>
   </header>
 
@@ -76,12 +103,29 @@
     <div id="stage">
       <!-- The raw webcam feed (mirrored with CSS so it feels like a mirror) -->
       <video id="video" playsinline muted></video>
-      <!-- Persistent canvas: your strokes live here until you clear -->
+      <!-- Persistent canvas: Draw-mode strokes live here until you clear -->
       <canvas id="drawCanvas"></canvas>
-      <!-- Overlay canvas: wiped and redrawn every frame (skeleton, cursor, labels) -->
+      <!-- Overlay canvas: wiped and redrawn every frame (skeleton, particles, cursor...) -->
       <canvas id="overlay"></canvas>
-      <!-- Current mode: DRAW / HOVER / IDLE (updated by main.js) -->
+      <!-- Current state of the active mode (updated by main.js) -->
       <div id="modeBadge" class="mode-badge" data-mode="NONE">NO HAND</div>
+
+      <!-- Game mode HUD + start / countdown / game-over card (modes/game.js) -->
+      <div class="game-layer" data-for="game" hidden>
+        <div class="game-hud">
+          <div class="hud-item"><span class="hud-label">Score</span><span id="hudScore" class="hud-value">0</span></div>
+          <div class="hud-item" id="hudTimeBox"><span class="hud-label">Time</span><span id="hudTime" class="hud-value">60</span></div>
+          <div class="hud-item"><span class="hud-label">Best</span><span id="hudBest" class="hud-value">0</span></div>
+        </div>
+        <div id="hudCombo" class="hud-combo">
+          <span id="hudComboText">x2</span>
+          <div class="combo-bar"><div id="hudComboBar"></div></div>
+        </div>
+        <div id="gameScreen" class="game-screen">
+          <h2 id="gameScreenTitle"></h2>
+          <p id="gameScreenText"></p>
+        </div>
+      </div>
 
       <!-- Loading / error screen, hidden once everything is running -->
       <div id="message" class="message">
@@ -93,13 +137,24 @@
   </main>
 
   <footer class="hint">
-    <span>☝ <b>Index finger</b> to draw</span>
-    <span>✌ <b>Index + middle</b> to move without drawing</span>
-    <span>✊ <b>Anything else</b> is idle</span>
-    <span><kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>1</kbd>–<kbd>6</kbd> colors · <kbd>[</kbd> <kbd>]</kbd> brush · <kbd>S</kbd> skeleton</span>
+    <div class="hint-group" data-for="draw">
+      <span>☝ <b>Index finger</b> to draw</span>
+      <span>✌ <b>Index + middle</b> to move without drawing</span>
+      <span><kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>6</kbd> colors · <kbd>[</kbd> <kbd>]</kbd> brush</span>
+    </div>
+    <div class="hint-group" data-for="game" hidden>
+      <span>☝ <b>Touch bubbles</b> with an index fingertip (either hand)</span>
+      <span>★ <b>gold</b> +50 · 💣 <b>bomb</b> −30</span>
+      <span><b>Quick pops</b> build a combo (up to x5)</span>
+      <span>✋ <b>Open palm 1 s</b> or <kbd>Space</kbd> to start</span>
+    </div>
+    <div class="hint-group" data-for="sign" hidden><span>Sign language arrives in Phase 3</span></div>
+    <div class="hint-group">
+      <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> modes · <kbd>T</kbd> trails · <kbd>S</kbd> skeleton</span>
+    </div>
   </footer>
 
-  <!-- type="module" lets main.js use `import` to pull tasks-vision from the CDN -->
+  <!-- type="module" lets main.js use `import` (CDN + our own modules) -->
   <script type="module" src="main.js"></script>
 </body>
 </html>
