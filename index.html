@@ -61,7 +61,20 @@
         <button id="gameStartBtn" class="btn" title="Start a new round (Space)">Start round <kbd>Space</kbd></button>
         <span class="muted-text">or hold an open palm ✋ for 1 s</span>
       </div>
-      <div class="controls" data-for="sign" hidden></div>
+      <div class="controls" data-for="sign" hidden>
+        <div class="segmented" role="group" aria-label="Sign sub-mode">
+          <button id="signSpellBtn" class="seg active" title="Spell words">Spell</button>
+          <button id="signPracticeBtn" class="seg" title="Practice letters (P)">Practice <kbd>P</kbd></button>
+        </div>
+        <button id="signSpaceBtn" class="btn" title="Add a space (Space)">Space <kbd>Space</kbd></button>
+        <button id="signBackBtn" class="btn" title="Delete last letter (Backspace)">⌫ <kbd>Bksp</kbd></button>
+        <button id="signClearBtn" class="btn" title="Clear text (C)">Clear <kbd>C</kbd></button>
+        <button id="practiceNextBtn" class="btn" title="Skip to the next letter (N)" hidden>Skip <kbd>N</kbd></button>
+        <label class="toggle" title="Show finger states, angles and letter scores (D)">
+          <input id="signDebugToggle" type="checkbox" />
+          <span>Debug <kbd>D</kbd></span>
+        </label>
+      </div>
 
       <div class="controls global">
         <label class="toggle" title="Glowing particle trails from the index fingertip (T)">
@@ -127,6 +140,34 @@
         </div>
       </div>
 
+      <!-- Sign mode: detected letter, practice card, debug panel, spelled text (modes/sign.js) -->
+      <div class="sign-layer" data-for="sign" hidden>
+        <div id="signLetterCard" class="sign-card">
+          <div id="signHoldRing" class="hold-ring">
+            <div id="signLetter" class="sign-letter faded">?</div>
+          </div>
+          <div class="conf">
+            <div class="conf-bar"><div id="signConfBar" data-level="low"></div></div>
+            <span id="signConfText">no hand</span>
+          </div>
+        </div>
+
+        <div id="signPractice" class="practice-card" hidden>
+          <div class="practice-label">Make this sign</div>
+          <div class="practice-row">
+            <div id="practiceLetter" class="practice-letter">A</div>
+            <div id="practiceTick" class="practice-tick">✓</div>
+          </div>
+          <p id="practiceDesc"></p>
+          <p id="practiceNote" class="practice-note"></p>
+          <div id="practiceScore" class="practice-score">0 matched</div>
+        </div>
+
+        <div id="signDebug" class="sign-debug" hidden></div>
+
+        <div class="sign-text"><span id="signText"></span><span class="caret"></span></div>
+      </div>
+
       <!-- Loading / error screen, hidden once everything is running -->
       <div id="message" class="message">
         <div class="spinner" id="spinner"></div>
@@ -148,7 +189,12 @@
       <span><b>Quick pops</b> build a combo (up to x5)</span>
       <span>✋ <b>Open palm 1 s</b> or <kbd>Space</kbd> to start</span>
     </div>
-    <div class="hint-group" data-for="sign" hidden><span>Sign language arrives in Phase 3</span></div>
+    <div class="hint-group" data-for="sign" hidden>
+      <span>Letters: <b>A B C D I L O V W Y</b>, palm facing the camera</span>
+      <span><b>Hold steady ~0.8 s</b> to type a letter</span>
+      <span>To repeat a letter, change pose or drop your hand briefly</span>
+      <span><kbd>Space</kbd> · <kbd>Bksp</kbd> · <kbd>C</kbd> clear · <kbd>P</kbd> practice · <kbd>D</kbd> debug</span>
+    </div>
     <div class="hint-group">
       <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> modes · <kbd>T</kbd> trails · <kbd>S</kbd> skeleton</span>
     </div>

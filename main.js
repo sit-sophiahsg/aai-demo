@@ -126,7 +126,7 @@ function getHand(label) {
   if (!hands[label]) {
     hands[label] = {
       label,
-      pts: Array.from({ length: 21 }, () => ({ x: 0, y: 0 })), // canvas pixels
+      pts: Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 })), // canvas pixels
       tip: { x: 0, y: 0 },       // One Euro filtered index fingertip
       prevTip: { x: 0, y: 0 },   // filtered tip on the previous frame
       vx: 0, vy: 0, speed: 0,    // fingertip velocity, canvas px / second

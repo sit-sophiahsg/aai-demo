@@ -5,7 +5,7 @@ It tracks up to 2 hands, draws the 21-point skeleton, and has three modes:
 
 - **Draw:** air draw with your index finger.
 - **Game:** Bubble Pop, popping bubbles with your fingertips.
-- **Sign:** ASL fingerspelling (coming in Phase 3).
+- **Sign:** ASL fingerspelling for 10 static letters, with a Spell mode and a Practice mode.
 
 Glowing particle trails follow your index fingertip in every mode.
 
@@ -66,6 +66,22 @@ library, WASM runtime and model load from jsDelivr and Google.
 - After game over, put your hand down before holding your palm up again, so you can't restart by accident.
 - Switching away from Game mode abandons the current round.
 
+### Sign mode: ASL fingerspelling
+
+Recognises **A B C D I L O V W Y**. J and Z are skipped because they need motion. Hold your hand
+with the palm facing the camera. Either hand works.
+
+| Action | How |
+| --- | --- |
+| Type a letter | Hold the handshape steady for ~0.8 s. The ring around the big letter fills, then it's added |
+| Same letter twice | Change pose or drop your hand briefly between them |
+| Space / delete / clear | `Space` · `Backspace` · `C`, or the toolbar buttons |
+| Practice | `P` or "Practice". Shows a target letter with a description, gives a ✓ when you match it, then moves on. `N` skips |
+| Debug panel | `D`. Shows each finger's ratio, bend angle and state (extended / curved / curled), thumb position, key gaps and angles, and the top letter scores |
+
+The bar under the letter is the classifier's confidence. Grey means no letter, yellow means
+it's shown but not sure enough to type, and green means it's confident enough to type.
+
 The top-right corner shows the active delegate (hover it to see the WebGL renderer),
 the camera resolution, model inference time and FPS.
 
@@ -99,6 +115,24 @@ the camera resolution, model inference time and FPS.
   this frame (distance from the bubble's center to a line segment), so a fast swipe still pops
   bubbles it passed between camera frames. The difficulty values (`*Start` → `*End`) are
   interpolated over the round. All tuning is in the `CONFIG` object at the top of `modes/game.js`.
+- **Sign classifier (rule-based, `modes/sign.js`):**
+  1. *Features:* each finger gets the shared extension ratio plus its 3D bend angle (PIP + DIP).
+     The thumb gets an "out" ratio and its position across the palm. There are also gaps between
+     fingertips and spread angles between fingers. All distances are divided by hand size.
+  2. *Fuzzy rules:* each letter is a list of conditions, e.g. V = index extended AND middle
+     extended AND ring/pinky curled AND index–middle spread > 12°. Each condition scores 0–1
+     (0.5 exactly at its threshold), and a letter's score is the **minimum** of its conditions
+     (a fuzzy AND).
+  3. *Decision:* the highest-scoring letter wins if it's above `minConfidence`. A short debounce
+     and the 0.8 s hold stop flickering letters from being typed.
+  - Look-alikes are separated by specific checks: thumb beside the index (A) vs across the
+    fingers (plain fist); thumb tip touching the index tip (O) vs a clear gap (C); fingers spread
+    (V) vs together (U); middle finger curved round to the thumb (D) vs a fist while pointing.
+  - **Left/right hands and mirroring:** "which side is the thumb on" is measured in a
+    hand-local frame (pinky knuckle → index knuckle), not in screen coordinates, and angles
+    don't change when an image is mirrored. So the same rules work for both hands.
+  - All thresholds are in the `CFG` object at the top of the file. They can also be tweaked live
+    via `window.SIGN_CONFIG` in the browser console while watching the debug panel.
 - **Mirroring:** the video is mirrored with CSS. The canvases aren't; instead `x` is flipped in
   code (`1 - x`) so text stays readable. MediaPipe's Left/Right labels assume a mirrored input,
   so they're swapped back (`SWAP_HANDEDNESS` in `main.js`).
@@ -119,7 +153,7 @@ the camera resolution, model inference time and FPS.
 | `particles.js` | Allocation-free glowing particle pool |
 | `modes/draw.js` | Draw mode: strokes, undo/clear, DRAW/HOVER/IDLE state machine |
 | `modes/game.js` | Game mode: Bubble Pop (states, spawning, scoring, combo, high score) |
-| `modes/sign.js` | Sign mode (Phase 3) |
+| `modes/sign.js` | Sign mode: feature extraction, fuzzy letter rules, hold-to-type, practice, debug panel |
 | `serve.ps1` | Tiny static server for Windows |
 
 Every mode exports the same interface (`init`, `enter`, `exit`, `update`, `render`,

@@ -85,10 +85,13 @@ export function dist(a, b) {
 // The video is mirrored on screen, so we mirror x here too (x -> 1 - x).
 // That keeps the dots on top of your hand in the mirrored video, while
 // the canvas itself stays un-mirrored so text is readable.
+// z (depth) is on roughly the same scale as x, so it's scaled by the width.
+// Mirroring flips x only; angles between bones are unchanged by a mirror.
 export function toPixels(landmarks, out, width, height) {
   for (let i = 0; i < 21; i++) {
     out[i].x = (1 - landmarks[i].x) * width;
     out[i].y = landmarks[i].y * height;
+    out[i].z = landmarks[i].z * width;
   }
 }
 
@@ -131,6 +134,19 @@ export function isFingerExtended(pts, [mcp, pip, , tip]) {
     dTip > dist(w, pts[pip]) * GESTURE_CONFIG.extendedRatio &&
     dTip > dist(w, pts[mcp]) * GESTURE_CONFIG.beyondKnuckleRatio
   );
+}
+
+// The number behind isFingerExtended(): wrist->tip divided by wrist->PIP.
+// About 1.3+ when straight, around 1.0 when half-bent, below 1 when curled.
+// Exported so classifiers can use "how extended" instead of just yes/no.
+export function extensionRatio(pts, [, pip, , tip]) {
+  return dist(pts[WRIST], pts[tip]) / (dist(pts[WRIST], pts[pip]) || 1);
+}
+
+// The number behind isThumbExtended(): thumb tip->pinky knuckle divided by
+// thumb IP->pinky knuckle. Bigger = thumb sticking further out from the palm.
+export function thumbOutRatio(pts) {
+  return dist(pts[THUMB_TIP], pts[PINKY_MCP]) / (dist(pts[THUMB_IP], pts[PINKY_MCP]) || 1);
 }
 
 // THE THUMB IS DIFFERENT: it bends sideways across the palm rather than
