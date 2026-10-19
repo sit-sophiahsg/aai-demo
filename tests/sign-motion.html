@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Motion Tests</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #0b0d12; color: #e6e9f2; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+    h1 { font: 700 18px system-ui, sans-serif; margin: 0 0 8px; }
+    .pass { color: #a3e635; } .fail { color: #f87171; } .muted { color: #8b93a7; }
+    #app { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Sign mode: J / Z motion tests (synthetic hand movements)</h1>
+  <p class="muted">Moves synthetic I-shape / pointing hands along J and Z paths (both directions, different speeds and sizes, with jitter),
+    plus movements that must NOT count. Then drives the real Sign mode to check that I and D don't type mid-motion.</p>
+  <pre id="out">Running…</pre>
+  <div id="app"></div>
+  <script type="module">
+    import { makeFeatures, computeFeatures } from "../sign/features.js";
+    import { fingerStates } from "../sign/rules.js";
+    import { MotionTracker, rdp, strokes, matchZ, matchJ } from "../sign/motion.js";
+    import { SHAPES, REJECTS, toPx } from "./synthetic-hands.js";
+
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (name, ok, detail = "") => {
+      ok ? pass++ : fail++;
+      const s = `${ok ? "PASS" : "FAIL"} ${name}${detail ? " · " + detail : ""}`;
+      lines.push(`<span class="${ok ? "pass" : "fail"}">${s}</span>`);
+      console.log("TEST " + s);
+    };
+
+    // Path made of straight legs between waypoints (hand sizes, +y = down),
+    // sampled at 30 fps over `seconds`, with optional jitter.
+    function legs(points, seconds, jitter = 0.015) {
+      const segs = [];
+      let total = 0;
+      for (let i = 1; i < points.length; i++) {
+        const l = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+        segs.push(l); total += l;
+      }
+      const frames = Math.round(seconds * 30), out = [];
+      for (let f = 0; f <= frames; f++) {
+        let d = (f / frames) * total, i = 0;
+        while (i < segs.length - 1 && d > segs[i]) { d -= segs[i]; i++; }
+        const t = segs[i] ? Math.min(1, d / segs[i]) : 0;
+        const [ax, ay] = points[i], [bx, by] = points[i + 1];
+        out.push([ax + (bx - ax) * t + (Math.random() - 0.5) * 2 * jitter, ay + (by - ay) * t + (Math.random() - 0.5) * 2 * jitter]);
+      }
+      return out;
+    }
+    const hold = (seconds) => legs([[0, 0], [0, 0]], seconds, 0.008);
+    const flipX = (path) => path.map(([x, y]) => [-x, y]);
+    const Z_PATH = [[0, 0], [1.2, 0], [0.1, 1.0], [1.3, 1.0]];
+    const J_PATH = [[0, 0], [0, 0.55], [-0.12, 0.72], [-0.38, 0.66]];
+
+    // Feed a movement of one handshape through a MotionTracker. Returns letters seen + whether "inProgress" was ever true.
+    function runTracker(shapePts, path, { scale = 100, startHold = 0.3 } = {}) {
+      const tr = new MotionTracker();
+      const f = makeFeatures();
+      const seq = [...hold(startHold), ...path];
+      let now = 1000, got = [], progress = false;
+      for (const [dx, dy] of seq) {
+        now += 33;
+        const pts = toPx(shapePts, { scale, cx: 250 + dx * scale, cy: 300 + dy * scale });
+        computeFeatures(pts, f); fingerStates(f);
+        const L = tr.update({ pts }, f, now);
+        if (L) got.push(L);
+        progress ||= tr.inProgress;
+      }
+      return { got, progress, debug: tr.debug };
+    }
+
+    try {
+      // ---- Unit: RDP + matchers on clean paths ----
+      const zStrokes = strokes(rdp(Z_PATH.map(([x, y]) => ({ x, y })), 0.1));
+      check("RDP + strokes: a clean Z is 3 strokes", zStrokes.length === 3);
+      check("matchZ accepts a clean Z", matchZ(zStrokes).ok);
+      check("matchJ accepts a clean J", matchJ(strokes(rdp(J_PATH.map(([x, y]) => ({ x, y })), 0.1))).ok);
+      check("matchZ rejects a backwards wave", !matchZ(strokes([[0, 0], [1, 0], [0, 0], [1, 0]].map(([x, y]) => ({ x, y })))).ok);
+
+      // ---- Tracker: positives ----
+      const I = SHAPES.I, POINT = REJECTS.point, OPEN = REJECTS.open5;
+      for (const [label, path, opt] of [
+        ["Z, normal speed", legs(Z_PATH, 1.0), {}],
+        ["Z, mirrored (other hand)", flipX(legs(Z_PATH, 1.0)), {}],
+        ["Z, slow (1.8 s)", legs(Z_PATH, 1.8), {}],
+        ["Z, fast (0.6 s)", legs(Z_PATH, 0.6), {}],
+        ["Z, far from camera (small hand)", legs(Z_PATH, 1.0), { scale: 60 }],
+        ["Z, close to camera (big hand)", legs(Z_PATH, 1.0), { scale: 150 }],
+      ]) {
+        const r = runTracker(POINT, path, opt);
+        check(`${label} → Z`, r.got.join() === "Z", `got [${r.got}] · ${r.debug}`);
+      }
+      for (const [label, path, opt] of [
+        ["J, normal speed", legs(J_PATH, 0.8), {}],
+        ["J, mirrored (other hand)", flipX(legs(J_PATH, 0.8)), {}],
+        ["J, slow (1.5 s)", legs(J_PATH, 1.5), {}],
+        ["J, far from camera", legs(J_PATH, 0.8), { scale: 60 }],
+      ]) {
+        const r = runTracker(I, path, opt);
+        check(`${label} → J`, r.got.join() === "J", `got [${r.got}] · ${r.debug}`);
+      }
+
+      // ---- Tracker: negatives ----
+      for (const [label, shape, path, want] of [
+        ["I held still 2 s", I, hold(2), ""],
+        ["I moved straight down (no hook)", I, legs([[0, 0], [0, 0.8]], 0.8), ""],
+        ["pointing held still 2 s", POINT, hold(2), ""],
+        ["pointing waved side to side", POINT, legs([[0, 0], [1, 0], [0, 0.05], [1, 0.05], [0, 0.1]], 1.5), ""],
+        ["pointing drawing a circle", POINT, legs(Array.from({ length: 13 }, (_, i) => [0.6 * Math.cos(i / 12 * 2 * Math.PI), 0.6 * Math.sin(i / 12 * 2 * Math.PI)]), 1.2), ""],
+        ["Z path with an OPEN hand", OPEN, legs(Z_PATH, 1.0), ""],
+        ["J path with a POINTING hand", POINT, legs(J_PATH, 0.8), ""],
+      ]) {
+        const r = runTracker(shape, path);
+        check(`${label} → nothing`, r.got.join() === want, `got [${r.got}] · ${r.debug}`);
+      }
+      const prog = runTracker(POINT, legs(Z_PATH, 1.0));
+      check("inProgress is set while drawing", prog.progress);
+      check("…but not for a still hand", !runTracker(I, hold(2)).progress);
+
+      // ---- Integration: the real Sign mode (rules classifier) ----
+      const html = await (await fetch("../index.html")).text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      doc.querySelectorAll("script").forEach((s) => s.remove());
+      document.getElementById("app").innerHTML = doc.body.innerHTML;
+      try { localStorage.setItem("handlab.sign.classifier", "rules"); } catch {}
+      const { signMode } = await import("../modes/sign.js");
+      const overlay = document.getElementById("overlay"); overlay.width = 640; overlay.height = 480;
+      const octx = overlay.getContext("2d");
+      signMode.init({ overlay, octx, handColors: { Left: "#38bdf8", Right: "#fb7185" }, pxScale: () => 0.5, refit() {} });
+      signMode.enter();
+      let now = 0;
+      const text = () => document.getElementById("signText").textContent;
+      const play = (shape, path, scale = 100) => {
+        for (const [dx, dy] of path) {
+          now += 33;
+          const hands = shape ? [{ label: "Right", pts: toPx(shape, { scale, cx: 250 + dx * scale, cy: 300 + dy * scale }) }] : [];
+          signMode.update(hands, now);
+          signMode.render(octx, hands, now);
+        }
+      };
+      play(I, hold(1.3));
+      check("integration: I held still types I", text() === "I", `"${text()}"`);
+      play(null, hold(0.4));
+      play(I, [...hold(0.2), ...legs(J_PATH, 0.8), ...hold(1.5)]);
+      check("integration: I + J motion types J (not another I), even when held after", text() === "IJ", `"${text()}"`);
+      play(null, hold(0.4));
+      play(POINT, [...hold(0.2), ...legs(Z_PATH, 1.2), ...hold(1.5)]);
+      check("integration: pointing + Z motion types Z only", text() === "IJZ", `"${text()}"`);
+      play(null, hold(0.4));
+      // D is also an index-pointing handshape, so drawing a Z with it counts as Z
+      // (ASL Z is just "point and draw"), and D itself must not be typed mid-motion.
+      play(SHAPES.D, [...hold(0.2), ...legs(Z_PATH, 1.2)]);
+      check("integration: Z drawn with a D handshape types Z, and no D mid-motion", text() === "IJZZ", `"${text()}"`);
+      play(null, hold(0.4));
+      play(SHAPES.D, hold(1.3));
+      check("integration: D held still (new attempt) types D", text() === "IJZZD", `"${text()}"`);
+    } catch (e) {
+      check("ERROR " + e.stack, false);
+    }
+    lines.push(`<span class="${fail ? "fail" : "pass"}">SUMMARY ${pass} passed, ${fail} failed</span>`);
+    console.log(`TEST SUMMARY ${pass} passed, ${fail} failed`);
+    document.getElementById("out").innerHTML = lines.join("\n");
+  </script>
+</body>
+</html>

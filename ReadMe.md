@@ -5,7 +5,9 @@ It tracks up to 2 hands, draws the 21-point skeleton, and has three modes:
 
 - **Draw:** air draw with your index finger.
 - **Game:** Bubble Pop, popping bubbles with your fingertips.
-- **Sign:** ASL fingerspelling for 19 static letters, with a Spell mode and a Practice mode.
+- **Sign:** ASL fingerspelling for the full alphabet: 24 static letters plus the moving letters
+  J and Z. It has Spell, Practice and Train sub-modes, three classifiers (Rules, k-NN, MLP),
+  and an evaluation view.
 
 Glowing particle trails follow your index fingertip in every mode.
 
@@ -68,14 +70,19 @@ library, WASM runtime and model load from jsDelivr and Google.
 
 ### Sign mode: ASL fingerspelling
 
-Recognises **A B C D F G H I K L O P Q R U V W X Y**. Either hand works.
+Either hand works.
+- **Rules classifier:** A B C D F G H I K L O P Q R U V W X Y. E, M, N, S and T differ only in
+  where the thumb hides among curled fingers, which is too subtle for hand-written rules.
+- **k-NN / MLP classifiers:** all 24 static letters, learned from your recordings (see Train below).
+- **J and Z (moving letters):** recognised from the fingertip's path, with any classifier.
+  - **J:** make an I (little finger up) and draw a hook with the little finger: down, then
+    sideways.
+  - **Z:** point with your index finger and draw a Z: across, diagonally down and back, across.
+  - Start moving within ~0.8 s of forming the handshape, otherwise the static I or D gets typed
+    first. While you're drawing, the path is shown in yellow and the badge says `DRAWING J` / `DRAWING Z`.
 - Most letters are signed with the fingers up.
 - **G and H point sideways**, and **P and Q point down**. These pairs have the same handshape
   (G/Q, H/U, K/P), so the classifier also looks at which way your hand points on screen.
-- Not covered by the rules:
-  - J and Z need motion.
-  - E, M, N, S and T differ only in where the thumb hides among curled fingers, which is too
-    subtle for hand-written rules.
 
 | Action | How |
 | --- | --- |
@@ -207,6 +214,37 @@ save/reload and the full evaluation (17 checks). On this idealised data all thre
 (Rules ~72–95%, k-NN and MLP ~99–100%), so it shows the pipeline is *correct*. Real-world
 accuracy must be measured on your recordings with **Evaluate**.
 
+### 5. Moving letters J and Z (`sign/motion.js`)
+- **Rolling buffer:** while the I handshape (for J) or the pointing handshape (for Z) is held,
+  the last ~2 s of the little or index fingertip's positions are kept in a fixed ring buffer.
+- **Every frame:**
+  1. **Simplify** the path with the Ramer–Douglas–Peucker algorithm. Points within 0.1 hand
+     sizes of a straight line are dropped, so jitter disappears and a Z becomes ~4 corner points
+     whatever the drawing speed.
+  2. **Merge** neighbouring strokes that point the same way.
+  3. **Match** the latest strokes:
+     - **Z** = across · diagonally down-and-back · across in the first stroke's direction.
+     - **J** = a downward stroke, then a sideways hook that turns at least 40°.
+
+  Everything is in hand sizes, and Z/J are accepted in either horizontal direction, so it works
+  for both hands without trusting the Left/Right label. All thresholds are in `MOTION_CFG`.
+- **Why path checks rather than dynamic time warping (DTW):**
+  - DTW compares the motion with recorded templates, so it's only as good as its templates
+    (ideally per person). It also needs the gesture's start and end cut out.
+  - J and Z have very distinctive shapes, so rules written from the letter's definition work
+    for anyone with no templates, ignore drawing speed, and are easy to read and tune.
+  - Trade-off: a very sloppy J/Z may fail a strict check, whereas DTW could learn a person's style.
+- **Look-alike protection:** I has the same handshape as J, and pointing/D the same as Z. While
+  the fingertip is moving in one of those handshapes (and for ~0.45 s after), static letters
+  can't be typed. After a J or Z, the static letter for the pose you're still holding isn't
+  typed until you change pose.
+- **Tests:** `tests/sign-motion.html` (28 checks).
+  - J and Z must be recognised in both directions, at slow and fast speeds, and near or far
+    from the camera.
+  - These must **not** trigger: a still hand, a straight drop, a side-to-side wave, a circle, a
+    Z drawn with an open hand.
+  - In the real Sign mode, I and D must not type mid-motion.
+
 The top-right corner shows the active delegate (hover it to see the WebGL renderer),
 the camera resolution, model inference time and FPS.
 
@@ -326,9 +364,11 @@ the camera resolution, model inference time and FPS.
 | `sign/evaluate.js` | Splits (random / time-blocked), metrics, confusion matrix, leave-one-signer-out |
 | `sign/eval-view.js` | The Evaluate window |
 | `sign/charts.js` | Training-curve line charts and the confusion-matrix heatmap |
+| `sign/motion.js` | J and Z: fingertip path buffer, RDP simplification, stroke pattern matching (`MOTION_CFG`) |
 | `tests/sign-rules.html` | Synthetic tests for the rules (clean, tilted, mirrored, noisy) |
 | `tests/sign-data.html` | Tests for preprocessing invariances and the dataset store (separate test database) |
 | `tests/sign-models.html` | Tests for the split, k-NN, MLP training/save/reload and the evaluation pipeline |
+| `tests/sign-motion.html` | Tests for J/Z recognition (positives, negatives, no I/D typed mid-motion) |
 | `tests/synthetic-hands.js` | Tiny 3D hand model used by the tests |
 | `serve.ps1` | Tiny static server for Windows |
 
@@ -337,6 +377,7 @@ Every mode exports the same interface (`init`, `enter`, `exit`, `update`, `rende
 only calls the **active** mode, so Draw poses can't draw while you're in Game or Sign mode.
 
 **Tests:** with the server running, open `http://localhost:8000/tests/sign-rules.html`,
-`http://localhost:8000/tests/sign-data.html` or `http://localhost:8000/tests/sign-models.html`.
+`http://localhost:8000/tests/sign-data.html`, `http://localhost:8000/tests/sign-models.html` or
+`http://localhost:8000/tests/sign-motion.html`.
 Results appear on the page. Keep the models test tab in the foreground while it runs:
 browsers slow down timers in background tabs, which makes TF.js training crawl.

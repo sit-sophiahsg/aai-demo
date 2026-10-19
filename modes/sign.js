@@ -17,7 +17,8 @@
 import { Debouncer } from "../gestures.js";
 import { makeFeatures, computeFeatures, packLandmarks } from "../sign/features.js";
 import { CFG, fingerStates } from "../sign/rules.js";
-import { STATIC_LETTERS, DESCRIPTIONS } from "../sign/letters.js";
+import { STATIC_LETTERS, MOTION_LETTERS, DESCRIPTIONS } from "../sign/letters.js";
+import { MotionTracker } from "../sign/motion.js";
 import * as dataset from "../sign/dataset.js";
 import * as clf from "../sign/classifiers.js";
 import { lineChart } from "../sign/charts.js";
@@ -34,6 +35,10 @@ let app = null;
 const perHand = {};   // label -> { feat (measurements), res (classifier result) }
 const stable = new Debouncer(CFG.stableFrames, "");
 let kind = loadClassifierChoice(); // "rules" | "knn" | "mlp"
+// J and Z (moving letters) are recognised separately from the fingertip path.
+const motion = new MotionTracker();
+let motionShown = "";     // J/Z just typed: keep it on the big letter briefly
+let motionShownUntil = 0;
 let bestReady = true;
 let bestNote = "";
 
@@ -217,7 +222,7 @@ function setSub(next) {
   trainPanel.hidden = sub !== "train";
   app.refit(); // the train side panel changes the space available for the video
   if (sub === "practice") {
-    practiceOrder = shuffle([...clf.practiceLetters(kind)]);
+    practiceOrder = shuffle([...clf.practiceLetters(kind), ...MOTION_LETTERS]);
     practiceIdx = 0;
     practiceMatched = 0;
     practiceScoreEl.textContent = "0 matched";
@@ -433,7 +438,8 @@ function renderDebug() {
     `<span>Index direction</span><b>${Math.round(f.indexTilt)}° ${tiltWord(f.indexTilt)}</b>` +
     `<span>Hand direction</span><b>${Math.round(f.handTilt)}° ${tiltWord(f.handTilt)}</b>` +
     `<span>Palm facing camera</span><b>${fmt(f.palmFacing)}</b>` +
-    `</div><div class="dbg-sub">${topTitle}</div>${bars}`;
+    `</div><div class="dbg-sub">${topTitle}</div>${bars}` +
+    `<div class="dbg-sub">Motion (J / Z)</div><div class="dbg-muted">${motion.inProgress ? "drawing · " : ""}${motion.debug}</div>`;
 }
 
 // =============================================================================
@@ -551,6 +557,7 @@ export const signMode = {
     heldLetter = "";
     locked = false;
     shown.letter = null;
+    motion.reset();
     if (sub === "train") trainPanel.hidden = false;
   },
 
@@ -594,10 +601,32 @@ export const signMode = {
       locked = false; // a new letter can be accepted
     }
 
+    // --- Moving letters J and Z (sign/motion.js) ---
+    // The tracker needs fuzzy finger states; the rules fill them in, the models don't.
+    let feat = null;
+    if (bestHand) {
+      feat = perHand[bestHand.label].feat;
+      if (kind !== "rules") fingerStates(feat);
+    }
+    const motionLetter = motion.update(bestHand, feat, now);
+    if (motionLetter) {
+      accept(motionLetter, now);
+      motionShown = motionLetter;
+      motionShownUntil = now + 900;
+      // The hand is still in the I / pointing shape: don't also type that
+      // static letter until the pose changes.
+      locked = true;
+      holdProgress = 1;
+      return;
+    }
+    // While a J or Z is being drawn, the static look-alikes (I for J,
+    // pointing/D for Z) must not type: keep restarting their hold timer.
+    if (motion.inProgress) holdStart = now;
+
     // Hold-to-accept: the same letter, confident enough (per-classifier
     // threshold), for CFG.holdMs.
     holdProgress = 0;
-    if (heldLetter && !locked && bestLetter === heldLetter && bestConf >= clf.THRESHOLDS[kind].accept) {
+    if (heldLetter && !locked && !motion.inProgress && bestLetter === heldLetter && bestConf >= clf.THRESHOLDS[kind].accept) {
       holdProgress = Math.min(1, (now - holdStart) / CFG.holdMs);
       if (holdProgress >= 1) {
         accept(heldLetter, now);
@@ -609,10 +638,17 @@ export const signMode = {
     if (sub === "practice" && practiceNextAt && now >= practiceNextAt) nextPractice();
   },
 
-  render() {
+  render(ctx, hands, now) {
+    // The J / Z path being drawn, as feedback.
+    if (sub !== "train" && motion.inProgress) motion.draw(ctx, "#facc15", app.pxScale());
+
     // Big letter + confidence + hold ring (DOM text only changes when needed).
-    const faded = !heldLetter || sub === "train";
-    const show = (sub !== "train" && heldLetter) || (bestLetter ? bestLetter : "?");
+    const drawing = sub !== "train" && motion.inProgress;
+    const justMoved = sub !== "train" && now < motionShownUntil;
+    const faded = drawing || (!justMoved && (!heldLetter || sub === "train"));
+    const show = justMoved ? motionShown
+      : drawing ? (motion.shape === "I" ? "J" : "Z")
+      : (sub !== "train" && heldLetter) || (bestLetter ? bestLetter : "?");
     if (shown.letter !== show || shown.faded !== faded) {
       shown.letter = show;
       shown.faded = faded;
@@ -623,7 +659,7 @@ export const signMode = {
     const th = clf.THRESHOLDS[kind];
     confBar.style.transform = `scaleX(${conf.toFixed(3)})`;
     confBar.dataset.level = conf >= th.accept ? "high" : conf >= th.min ? "mid" : "low";
-    confText.textContent = !bestHand ? "no hand" : !bestReady ? bestNote : `${Math.round(conf * 100)}%`;
+    confText.textContent = !bestHand ? "no hand" : drawing ? "drawing…" : !bestReady ? bestNote : `${Math.round(conf * 100)}%`;
     holdRing.style.setProperty("--p", holdProgress.toFixed(3));
     holdRing.classList.toggle("done", locked && sub !== "train");
     renderDebug();
@@ -641,6 +677,7 @@ export const signMode = {
 
   badge() {
     if (sub === "train") return { text: recording ? `REC ${trainLetter}` : `TRAIN ${trainLetter}`, tone: recording ? "REC" : "HOVER" };
+    if (motion.inProgress) return { text: `DRAWING ${motion.shape === "I" ? "J" : "Z"}`, tone: "DRAW" };
     return { text: sub === "practice" ? "PRACTICE" : "SPELL", tone: heldLetter ? "DRAW" : "HOVER" };
   },
 

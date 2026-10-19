@@ -9,6 +9,9 @@ export const STATIC_LETTERS = [
   "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y",
 ];
 
+// The two moving letters, recognised from the fingertip's path (sign/motion.js).
+export const MOTION_LETTERS = ["J", "Z"];
+
 // Reference handshapes (palm facing the camera unless stated).
 export const DESCRIPTIONS = {
   A: "Make a fist with your thumb resting against the side of your index finger, not across your fingers.",
@@ -35,4 +38,6 @@ export const DESCRIPTIONS = {
   W: "Raise your index, middle and ring fingers spread apart. Your thumb holds your little finger down.",
   X: "Raise your index finger and hook it, bending the top two joints like a hook. Curl the other fingers.",
   Y: "Stick out your thumb and little finger. Curl your middle three fingers down (hang loose).",
+  J: "Make an I (little finger up), then draw a J in the air with your little finger: down, then hook sideways.",
+  Z: "Point with your index finger and draw a Z in the air: across, diagonally down and back, then across again.",
 };
