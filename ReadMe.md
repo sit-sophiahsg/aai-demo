@@ -1,8 +1,8 @@
 # Air Draw: Hand Tracking in the Browser
 
 Real-time hand tracking with MediaPipe's `HandLandmarker` (`@mediapipe/tasks-vision`).
-It draws the 21-point hand skeleton for up to 2 hands, and you can **air draw** with your
-index finger while you pinch your thumb and index finger together.
+It draws the 21-point hand skeleton for up to 2 hands, and you can **air draw** by pointing
+your index finger. Raise your middle finger too to lift the pen.
 
 ## Run it
 
@@ -27,8 +27,9 @@ library, WASM runtime and model load from jsDelivr and Google.
 
 | Action | How |
 | --- | --- |
-| Draw | Pinch thumb tip (4) + index tip (8), then move |
-| Lift pen | Release the pinch |
+| **DRAW** ☝ | Only the index finger extended: the fingertip draws |
+| **HOVER** ✌ | Index + middle extended: the cursor moves, pen up (use it between letters) |
+| **IDLE** | Any other pose (fist, open palm…): nothing happens |
 | Undo last stroke | `U`, `Ctrl+Z`, or the Undo button |
 | Clear | `C` or the Clear button |
 | Palm clear (off by default) | Tick "Palm clear", then hold a wide-open, spread hand still for 1.5 s |
@@ -45,9 +46,14 @@ the camera resolution, model inference time and FPS.
 - **Landmarks:** 0 = wrist. Each finger has 4 points going outwards, and the tip is always
   the last: thumb 1–4, index 5–8, middle 9–12, ring 13–16, pinky 17–20. There's a diagram at
   the top of `main.js`.
-- **Pinch:** `distance(4, 8) / distance(0, 9)`. Dividing by the wrist-to-middle-knuckle length
-  makes it independent of how far you are from the camera. The pen goes down below `0.3` for
-  2 frames in a row, and lifts above `0.5` for 3 frames in a row (hysteresis + debounce).
+- **Finger extended?** A finger counts as extended when its tip is clearly farther from the
+  wrist than its PIP joint (and its knuckle). That uses distances, not "is the tip higher",
+  so it still works when your hand is tilted. The thumb bends sideways, so it's checked
+  separately (does its tip stick out away from the pinky knuckle?). DRAW and HOVER ignore the
+  thumb, so it can be tucked in or out.
+- **Mode switching:** a pose has to be seen 3 frames in a row before the mode changes
+  (debounce), so the pen doesn't flicker. Entering DRAW starts a new stroke, and leaving it
+  ends the stroke. The mode shows in the top-left badge and next to each hand's label.
 - **Strokes:** each stroke is stored as `{ color, size, points }` in an array. The drawing
   canvas is a separate layer that's never cleared per frame. Undo pops the last stroke and
   redraws the rest.

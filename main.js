@@ -33,6 +33,12 @@
 //  Pattern: each finger has 4 points going from the palm outwards, and the
 //  tip is always the last one: 4, 8, 12, 16, 20.
 //
+//  FINGER-COUNT CONTROLS
+//  ---------------------
+//  ☝  index only            -> DRAW  (pen down, fingertip draws)
+//  ✌  index + middle        -> HOVER (cursor follows, pen up)
+//     anything else         -> IDLE  (fist, open palm, ...)
+//
 //  TWO CANVAS LAYERS
 //  -----------------
 //  #drawCanvas : your strokes. NEVER cleared per frame. It's only wiped by
@@ -62,15 +68,15 @@ const THUMB_TIP = 4;
 const INDEX_MCP = 5;
 const INDEX_TIP = 8;
 const MIDDLE_MCP = 9;
+const PINKY_MCP = 17;
 const PINKY_TIP = 20;
 
-// [MCP, PIP, DIP, TIP] for the four fingers, used by the open-palm check.
-const FINGERS = [
-  [5, 6, 7, 8],      // index
-  [9, 10, 11, 12],   // middle
-  [13, 14, 15, 16],  // ring
-  [17, 18, 19, 20],  // pinky
-];
+// [MCP, PIP, DIP, TIP] for the four fingers.
+const INDEX = [5, 6, 7, 8];
+const MIDDLE = [9, 10, 11, 12];
+const RING = [13, 14, 15, 16];
+const PINKY = [17, 18, 19, 20];
+const FINGERS = [INDEX, MIDDLE, RING, PINKY];
 
 // Pairs of landmark indices that form the "bones" we draw as lines.
 const HAND_CONNECTIONS = [
@@ -84,16 +90,15 @@ const HAND_CONNECTIONS = [
 
 // ---- Tuning knobs ----
 
-// PINCH: thresholds are measured in "hand sizes" (see getHandSize()).
-// Hysteresis: the ratio must drop below PINCH_ON to start drawing, and rise
-// above PINCH_OFF to stop. A value in between keeps the current state, so a
-// distance hovering near one threshold can't flicker the pen on and off.
-const PINCH_ON = 0.3;
-const PINCH_OFF = 0.5;
-// Debounce: the new state must hold for this many consecutive frames before
-// we believe it. One noisy frame can't start or end a stroke.
-const PINCH_START_FRAMES = 2;
-const PINCH_RELEASE_FRAMES = 3;
+// FINGER EXTENSION (see isFingerExtended()): a finger counts as extended
+// when its tip is at least EXTENDED_RATIO times farther from the wrist than
+// its PIP joint is. Curled fingers fold the tip back toward the palm, so the
+// ratio drops below 1.
+const EXTENDED_RATIO = 1.15;
+
+// Debounce: a new pose must be seen this many frames in a row before the
+// mode switches. One noisy frame can't start or end a stroke.
+const POSE_FRAMES = 3;
 
 // If a hand disappears for up to this many frames (e.g. motion blur), keep
 // its stroke alive. When it comes back, the gap is filled by interpolation.
@@ -133,6 +138,7 @@ const fpsEl = $("fps");
 const inferEl = $("infer");
 const delegateEl = $("delegate");
 const resEl = $("resolution");
+const modeBadge = $("modeBadge");
 const messageEl = $("message");
 const msgTitle = $("msgTitle");
 const msgText = $("msgText");
@@ -222,10 +228,10 @@ function getHandState(label) {
       fx: new OneEuroFilter(),
       fy: new OneEuroFilter(),
       tip: { x: 0, y: 0 },   // filtered index fingertip, canvas pixels
-      pinching: false,       // is the pen down?
-      onFrames: 0,           // consecutive frames that looked like "pinch"
-      offFrames: 0,          // consecutive frames that looked like "release"
-      blocked: false,        // true after Undo, until the pinch is released
+      mode: "IDLE",          // confirmed mode: "DRAW" | "HOVER" | "IDLE"
+      candidate: "IDLE",     // the pose seen on recent frames
+      candidateFrames: 0,    // how many frames in a row `candidate` was seen
+      blocked: false,        // true after Undo, until the hand leaves DRAW
       stroke: null,          // the stroke this hand is currently drawing
       missing: 0,            // frames since this hand was last seen
       palmStart: -1,         // when the open-palm hold began (-1 = not holding)
@@ -341,9 +347,6 @@ function beginStroke(state) {
 function endStroke(state) {
   if (state.stroke) drawStrokeEnd(dctx, state.stroke);
   state.stroke = null;
-  state.pinching = false;
-  state.onFrames = 0;
-  state.offFrames = 0;
 }
 
 // =============================================================================
@@ -353,8 +356,8 @@ function endStroke(state) {
 function clearDrawing() {
   strokes.length = 0;
   for (const label in hands) hands[label].stroke = null;
-  // Any hand still pinching starts a fresh stroke on its next frame.
-  for (const label in hands) if (hands[label].pinching) beginStroke(hands[label]);
+  // A hand that's still in DRAW mode carries on with a fresh stroke.
+  for (const label in hands) if (hands[label].mode === "DRAW") beginStroke(hands[label]);
   dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
 }
 
@@ -362,13 +365,12 @@ function undo() {
   const removed = strokes.pop();
   if (!removed) return;
   // If a hand was drawing the stroke we just removed, lift its pen so it
-  // doesn't keep drawing into a deleted stroke. It must re-pinch to draw.
+  // doesn't keep drawing into a deleted stroke. It has to leave DRAW pose
+  // (e.g. go to HOVER) and come back to start drawing again.
   for (const label in hands) {
     if (hands[label].stroke === removed) {
       hands[label].stroke = null;
-      hands[label].pinching = false;
-      hands[label].onFrames = 0;
-      hands[label].blocked = true; // ignore the pinch until it's released
+      hands[label].blocked = true;
     }
   }
   redrawAll();
@@ -484,13 +486,45 @@ function getHandSize(pts) {
   return dist(pts[WRIST], pts[MIDDLE_MCP]) || 1;
 }
 
-// PINCH DETECTION
-// 1. Measure the pixel distance between thumb tip (4) and index tip (8).
-// 2. Divide by hand size, so e.g. 0.3 means "30% of a hand-size apart".
-//    Near or far from the camera, a real pinch gives about the same number.
-// 3. Compare against PINCH_ON / PINCH_OFF with debouncing (updatePinch()).
-function getPinchRatio(pts) {
-  return dist(pts[THUMB_TIP], pts[INDEX_TIP]) / getHandSize(pts);
+// IS A FINGER EXTENDED?
+// A naive check like "tip.y < pip.y" (tip above the joint) only works with the
+// hand held upright, and breaks as soon as you tilt it. Distances from the
+// wrist don't care about rotation:
+//
+//   extended:  wrist ------ PIP ------ TIP     tip much farther than PIP
+//   curled:    wrist ------ PIP                tip folds back toward the
+//                       TIP /                  palm, so it's CLOSER than PIP
+//
+// We also require the tip to be beyond the knuckle (MCP), which rejects a
+// finger bent sharply at the knuckle.
+// (A finger pointing straight at the camera looks short in 2D, so point it
+// up/sideways rather than at the lens.)
+function isFingerExtended(pts, [mcp, pip, , tip]) {
+  const w = pts[WRIST];
+  const dTip = dist(w, pts[tip]);
+  return dTip > dist(w, pts[pip]) * EXTENDED_RATIO && dTip > dist(w, pts[mcp]) * 1.3;
+}
+
+// THE THUMB IS DIFFERENT: it bends sideways across the palm rather than
+// curling toward the wrist, so its wrist distance barely changes. Instead we
+// check whether the thumb tip sticks out away from the palm: it's farther
+// from the pinky knuckle (17) than the thumb's own IP joint (3) is.
+// (Used only by the open-palm check. DRAW/HOVER ignore the thumb, so it's
+// fine whether yours is tucked in or sticking out.)
+function isThumbExtended(pts) {
+  return dist(pts[THUMB_TIP], pts[PINKY_MCP]) > dist(pts[THUMB_IP], pts[PINKY_MCP]) * 1.1;
+}
+
+// Map the four fingers to a mode.
+function classifyPose(pts) {
+  const index = isFingerExtended(pts, INDEX);
+  const middle = isFingerExtended(pts, MIDDLE);
+  const ring = isFingerExtended(pts, RING);
+  const pinky = isFingerExtended(pts, PINKY);
+  if (ring || pinky) return "IDLE";       // open palm, rock sign, etc.
+  if (index && !middle) return "DRAW";    // ☝
+  if (index && middle) return "HOVER";    // ✌
+  return "IDLE";                          // fist, or only the middle finger
 }
 
 // Straightness of a chain of joints: straight-line length divided by the
@@ -513,7 +547,7 @@ function isOpenPalm(pts) {
   const thumbStraight =
     dist(pts[THUMB_MCP], pts[THUMB_TIP]) /
     (dist(pts[THUMB_MCP], pts[THUMB_IP]) + dist(pts[THUMB_IP], pts[THUMB_TIP]) || 1);
-  if (thumbStraight < STRAIGHT) return false;
+  if (thumbStraight < STRAIGHT || !isThumbExtended(pts)) return false;
   if (dist(pts[THUMB_TIP], pts[INDEX_MCP]) < 0.6 * size) return false;
   if (dist(pts[INDEX_TIP], pts[PINKY_TIP]) < 0.85 * size) return false;
   return true;
@@ -578,18 +612,27 @@ function drawLabel(pts, label, color) {
   octx.fillText(label, x, by + h / 2);
 }
 
-// Cursor at the index fingertip: hollow ring = pen up, filled = drawing.
-function drawCursor(p, pinching) {
+// Cursor at the index fingertip:
+//   DRAW  -> filled dot in the brush color
+//   HOVER -> hollow ring in the brush color
+//   IDLE  -> small faint grey ring (just so you can see tracking is alive)
+function drawCursor(p, mode) {
   const s = pxScale();
   const r = Math.max(brushSize / 2, 6) * s;
   octx.beginPath();
-  octx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  if (pinching) {
+  octx.lineWidth = 2 * s;
+  if (mode === "DRAW") {
+    octx.arc(p.x, p.y, r, 0, Math.PI * 2);
     octx.fillStyle = brushColor;
     octx.fill();
+    octx.strokeStyle = "#fff";
+  } else if (mode === "HOVER") {
+    octx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    octx.strokeStyle = brushColor;
+  } else {
+    octx.arc(p.x, p.y, 5 * s, 0, Math.PI * 2);
+    octx.strokeStyle = "rgba(160,167,185,0.5)";
   }
-  octx.lineWidth = 2 * s;
-  octx.strokeStyle = pinching ? "#fff" : brushColor;
   octx.stroke();
 }
 
@@ -622,31 +665,31 @@ function drawPalmProgress(center, progress) {
 //  Per-frame processing
 // =============================================================================
 
-// Pinch state machine with hysteresis + debounce.
-//   pen up   -> needs ratio < PINCH_ON  for PINCH_START_FRAMES   frames in a row
-//   pen down -> needs ratio > PINCH_OFF for PINCH_RELEASE_FRAMES frames in a row
-function updatePinch(state, ratio) {
-  if (!state.pinching) {
-    // After Undo removed this hand's live stroke, wait for a real release.
-    if (state.blocked) {
-      if (ratio > PINCH_OFF) state.blocked = false;
-      return;
-    }
-    state.onFrames = ratio < PINCH_ON ? state.onFrames + 1 : 0;
-    if (state.onFrames >= PINCH_START_FRAMES) {
-      state.pinching = true;
-      state.offFrames = 0;
-      beginStroke(state);
-    }
+// Pose state machine with debounce.
+// The raw pose of each frame becomes the "candidate". Only once the same
+// candidate has been seen POSE_FRAMES frames in a row does the mode change.
+//   -> DRAW         : start a new stroke (one stroke per DRAW session, so
+//                     Undo removes exactly one "pen down ... pen up")
+//   DRAW -> other   : end the stroke (pen up)
+function updatePose(state, pose) {
+  if (pose === state.candidate) state.candidateFrames++;
+  else {
+    state.candidate = pose;
+    state.candidateFrames = 1;
+  }
+  if (state.candidateFrames < POSE_FRAMES || pose === state.mode) return;
+
+  if (state.mode === "DRAW") endStroke(state);
+  state.mode = pose;
+  if (pose === "DRAW") {
+    if (!state.blocked) beginStroke(state);
   } else {
-    if (ratio > PINCH_OFF) state.offFrames++;
-    else state.offFrames = 0;
-    if (state.offFrames >= PINCH_RELEASE_FRAMES) endStroke(state);
+    state.blocked = false; // left DRAW, so Undo's block is lifted
   }
 }
 
 function updatePalmClear(state, pts, now) {
-  if (!palmToggle.checked || state.pinching || !isOpenPalm(pts)) {
+  if (!palmToggle.checked || state.mode === "DRAW" || !isOpenPalm(pts)) {
     state.palmStart = -1;
     state.palmArmed = true;
     return;
@@ -673,8 +716,19 @@ function updatePalmClear(state, pts, now) {
 
 const seen = new Set(); // reused every frame
 
+// The on-screen badge shows the "busiest" hand: DRAW beats HOVER beats IDLE.
+const MODE_RANK = { NONE: 0, IDLE: 1, HOVER: 2, DRAW: 3 };
+let shownMode = "";
+function setModeBadge(mode) {
+  if (mode === shownMode) return; // only touch the DOM when it changes
+  shownMode = mode;
+  modeBadge.textContent = mode === "NONE" ? "NO HAND" : mode;
+  modeBadge.dataset.mode = mode;
+}
+
 function processResults(results, now) {
   octx.clearRect(0, 0, overlay.width, overlay.height); // overlay ONLY
+  let topMode = "NONE";
 
   // Newer versions call it `handedness`, older ones `handednesses`.
   const handedness = results.handedness || results.handednesses || [];
@@ -698,9 +752,9 @@ function processResults(results, now) {
     state.tip.x = state.fx.filter(pts[INDEX_TIP].x, tSec);
     state.tip.y = state.fy.filter(pts[INDEX_TIP].y, tSec);
 
-    // --- Pinch -> pen down/up ---
-    updatePinch(state, getPinchRatio(pts));
-    if (state.pinching && state.stroke) addPoint(state.stroke, state.tip.x, state.tip.y);
+    // --- Finger count -> DRAW / HOVER / IDLE ---
+    updatePose(state, classifyPose(pts));
+    if (state.mode === "DRAW" && state.stroke) addPoint(state.stroke, state.tip.x, state.tip.y);
 
     // --- Optional open-palm clear ---
     updatePalmClear(state, pts, now);
@@ -708,9 +762,11 @@ function processResults(results, now) {
     // --- Overlay ---
     const color = HAND_COLORS[label];
     if (skeletonToggle.checked) drawSkeleton(pts, color);
-    drawLabel(pts, label, color);
-    drawCursor(state.tip, state.pinching);
+    drawLabel(pts, `${label} · ${state.mode}`, color);
+    drawCursor(state.tip, state.mode);
+    if (MODE_RANK[state.mode] > MODE_RANK[topMode]) topMode = state.mode;
   }
+  setModeBadge(topMode);
 
   // Hands not seen this frame: give them a short grace period (the stroke
   // stays open and the gap gets interpolated), then lift the pen and forget.

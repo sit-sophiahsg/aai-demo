@@ -80,6 +80,8 @@
       <canvas id="drawCanvas"></canvas>
       <!-- Overlay canvas: wiped and redrawn every frame (skeleton, cursor, labels) -->
       <canvas id="overlay"></canvas>
+      <!-- Current mode: DRAW / HOVER / IDLE (updated by main.js) -->
+      <div id="modeBadge" class="mode-badge" data-mode="NONE">NO HAND</div>
 
       <!-- Loading / error screen, hidden once everything is running -->
       <div id="message" class="message">
@@ -91,8 +93,9 @@
   </main>
 
   <footer class="hint">
-    <span><b>Pinch</b> thumb + index to draw</span>
-    <span><b>Release</b> to lift the pen</span>
+    <span>☝ <b>Index finger</b> to draw</span>
+    <span>✌ <b>Index + middle</b> to move without drawing</span>
+    <span>✊ <b>Anything else</b> is idle</span>
     <span><kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>1</kbd>–<kbd>6</kbd> colors · <kbd>[</kbd> <kbd>]</kbd> brush · <kbd>S</kbd> skeleton</span>
   </footer>
 
