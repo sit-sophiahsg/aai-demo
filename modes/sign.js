@@ -16,18 +16,26 @@
 
 import { Debouncer } from "../gestures.js";
 import { makeFeatures, computeFeatures, packLandmarks } from "../sign/features.js";
-import { CFG, RULE_LETTERS, scoreLetters } from "../sign/rules.js";
+import { CFG, fingerStates } from "../sign/rules.js";
 import { STATIC_LETTERS, DESCRIPTIONS } from "../sign/letters.js";
 import * as dataset from "../sign/dataset.js";
+import * as clf from "../sign/classifiers.js";
+import { lineChart } from "../sign/charts.js";
+import { initEvalView, openEvalView, isEvalOpen } from "../sign/eval-view.js";
+import { MLP_DEFAULTS } from "../sign/mlp.js";
 
 const FINGER_NAMES = ["Index", "Middle", "Ring", "Pinky"];
 const RECORD_INTERVAL_MS = 100;   // ~10 samples per second while recording
 const TARGET_PER_LETTER = 100;
 const SIGNER_KEY = "handlab.signer";
+const CLASSIFIER_KEY = "handlab.sign.classifier";
 
 let app = null;
-const perHand = {};   // label -> { feat, scores, letter, conf }
+const perHand = {};   // label -> { feat (measurements), res (classifier result) }
 const stable = new Debouncer(CFG.stableFrames, "");
+let kind = loadClassifierChoice(); // "rules" | "knn" | "mlp"
+let bestReady = true;
+let bestNote = "";
 
 let bestHand = null;  // the hand whose result is shown this frame
 let bestLetter = "";
@@ -62,26 +70,86 @@ let practiceEl, practiceLetterEl, practiceDescEl, practiceScoreEl, practiceTickE
 let debugEl, spellBtn, practiceBtn, trainBtn, nextBtn, debugToggle, spellControls;
 let trainPanel, trainLetterEl, trainDescEl, trainGrid, trainStatus, trainSigner, trainSigners,
   trainTotal, trainStorage, trainDeleteBtn, trainRecordBtn, trainImportFile;
+let classifierSel, clfTag, mlpTrainBtn, mlpStatus, mlpAccChart, mlpLossChart, knnKInput, knnMetricSel, mlpEpochsInput;
 const gridButtons = {};
 const shown = { letter: null, faded: null, text: null };
 
 function handResult(label) {
-  if (!perHand[label]) {
-    perHand[label] = { feat: makeFeatures(), scores: Object.fromEntries(RULE_LETTERS.map((l) => [l, 0])), letter: "", conf: 0 };
-  }
+  if (!perHand[label]) perHand[label] = { feat: makeFeatures(), res: clf.makeResult() };
   return perHand[label];
 }
 
-function classify(r) {
-  r.letter = "";
-  r.conf = 0;
-  for (const l of RULE_LETTERS) {
-    if (r.scores[l] > r.conf) {
-      r.conf = r.scores[l];
-      r.letter = l;
-    }
+// =============================================================================
+//  Classifier choice: Rules / k-NN / MLP
+// =============================================================================
+
+function loadClassifierChoice() {
+  try {
+    const k = localStorage.getItem(CLASSIFIER_KEY);
+    return clf.KINDS.includes(k) ? k : "rules";
+  } catch {
+    return "rules";
   }
-  if (r.conf < CFG.minConfidence) r.letter = "";
+}
+
+function setClassifier(next) {
+  kind = clf.KINDS.includes(next) ? next : "rules";
+  try { localStorage.setItem(CLASSIFIER_KEY, kind); } catch { /* not persisted */ }
+  classifierSel.value = kind;
+  clfTag.textContent = clf.KIND_NAMES[kind];
+  stable.reset("");
+  heldLetter = "";
+  locked = false;
+  if (kind === "mlp") clf.ensureMlpLoaded().then(updateMlpStatus);
+  if (sub === "practice") setSub("practice"); // re-pick letters for this classifier
+}
+
+// Status line under "Train MLP".
+function updateMlpStatus() {
+  const { state, error, summary } = clf.mlpInfo();
+  if (state === "training") return; // the training loop writes its own progress
+  if (state === "error") mlpStatus.textContent = `⚠ ${error}`;
+  else if (summary?.trainedAt) {
+    mlpStatus.textContent = `Saved model: ${summary.samples} samples, ${summary.epochs} epochs` +
+      (summary.valAcc != null ? `, validation accuracy ${Math.round(summary.valAcc * 100)}%` : "") +
+      ` · ${new Date(summary.trainedAt).toLocaleString()}`;
+  } else mlpStatus.textContent = "No trained model yet.";
+}
+
+async function trainMlp() {
+  const epochs = Math.max(5, Math.min(200, Number(mlpEpochsInput.value) || MLP_DEFAULTS.epochs));
+  const hist = { acc: [], val_acc: [], loss: [], val_loss: [] };
+  const draw = () => {
+    lineChart(mlpAccChart, [
+      { name: "train", color: "var(--series-1)", values: hist.acc },
+      { name: "validation", color: "var(--series-2)", values: hist.val_acc },
+    ], { title: "Accuracy", yMin: 0, yMax: 1, format: (v) => `${Math.round(v * 100)}%` });
+    lineChart(mlpLossChart, [
+      { name: "train", color: "var(--series-1)", values: hist.loss },
+      { name: "validation", color: "var(--series-2)", values: hist.val_loss },
+    ], { title: "Loss", yMin: 0 });
+  };
+  mlpTrainBtn.disabled = true;
+  mlpStatus.textContent = "Loading TensorFlow.js…";
+  try {
+    const meta = await clf.trainDeployedMLP({
+      epochs,
+      onEpoch: async (e, logs) => {
+        for (const key in hist) hist[key].push(logs[key] ?? null);
+        mlpStatus.textContent = `Epoch ${e + 1}/${epochs} · loss ${logs.loss.toFixed(3)} · accuracy ${Math.round(logs.acc * 100)}%` +
+          (logs.val_acc != null ? ` · validation ${Math.round(logs.val_acc * 100)}%` : "");
+        draw();
+        await new Promise((r) => setTimeout(r, 0)); // let the page repaint
+      },
+    });
+    updateMlpStatus();
+    mlpStatus.textContent = `✓ Trained and saved. ` + mlpStatus.textContent.replace(/^Saved model: /, "");
+    if (meta && kind !== "mlp") mlpStatus.textContent += " Select “MLP” as the classifier to use it.";
+  } catch (err) {
+    mlpStatus.textContent = `Training failed: ${err.message}`;
+  } finally {
+    mlpTrainBtn.disabled = false;
+  }
 }
 
 // =============================================================================
@@ -149,13 +217,13 @@ function setSub(next) {
   trainPanel.hidden = sub !== "train";
   app.refit(); // the train side panel changes the space available for the video
   if (sub === "practice") {
-    practiceOrder = shuffle([...RULE_LETTERS]);
+    practiceOrder = shuffle([...clf.practiceLetters(kind)]);
     practiceIdx = 0;
     practiceMatched = 0;
     practiceScoreEl.textContent = "0 matched";
     showPracticeTarget();
   }
-  if (sub === "train") refreshTrainPanel();
+  if (sub === "train") { refreshTrainPanel(); updateMlpStatus(); }
 }
 
 function setDebug(on) {
@@ -202,6 +270,7 @@ function updateRecording() {
   } else if (!want && recording) {
     recording = false;
     if (takeCount) trainStatus.textContent = `Recorded ${takeCount} “${trainLetter}” samples.`;
+    if (takeCount) clf.markDataChanged(); // k-NN refits from the new data on next use
     refreshTrainPanel(); // per-signer counts and total
   }
   trainRecordBtn.classList.toggle("recording", recording);
@@ -281,6 +350,7 @@ async function importData(file) {
   } catch (err) {
     trainStatus.textContent = `Import failed: ${err.message}`;
   }
+  clf.markDataChanged();
   refreshTrainPanel();
 }
 
@@ -289,6 +359,7 @@ async function deleteCurrentLetter() {
   if (!n) return;
   if (!confirm(`Delete all ${n} samples of “${trainLetter}”? This can't be undone (unless you exported them).`)) return;
   await dataset.deleteLetter(trainLetter);
+  clf.markDataChanged();
   trainStatus.textContent = `Deleted ${n} “${trainLetter}” samples.`;
   refreshTrainPanel();
 }
@@ -325,6 +396,7 @@ function renderDebug() {
   }
   const r = perHand[bestHand.label];
   const f = r.feat;
+  if (kind !== "rules") fingerStates(f); // finger states for the table (the rules fill these themselves)
   let rows = "";
   for (let i = 0; i < 4; i++) {
     const [label, cls] = fingerState(f, i);
@@ -334,10 +406,15 @@ function renderDebug() {
     : f.thumbSide < CFG.thumbInSide ? ["tucked", "curl"] : ["beside", "curve"];
   rows += `<tr><td>Thumb</td><td>${fmt(f.thumbOut)}</td><td>side ${fmt(f.thumbSide)}</td><td class="${thumbState[1]}">${thumbState[0]}</td></tr>`;
 
-  const top = [...RULE_LETTERS].sort((a, b) => r.scores[b] - r.scores[a]).slice(0, 4);
-  const bars = top.map((l) =>
-    `<div class="dbg-score"><span>${l}</span><div class="dbg-bar"><div style="transform:scaleX(${r.scores[l].toFixed(3)})"></div></div><span>${Math.round(r.scores[l] * 100)}%</span></div>`
-  ).join("");
+  // Top 4: fuzzy scores for the rules, class probabilities for the models.
+  const p = r.res.probs;
+  const top = clf.CLASSES.map((l, i) => i).sort((a, b) => p[b] - p[a]).slice(0, 4);
+  const bars = r.res.ready
+    ? top.map((i) =>
+      `<div class="dbg-score"><span>${clf.CLASSES[i]}</span><div class="dbg-bar"><div style="transform:scaleX(${p[i].toFixed(3)})"></div></div><span>${Math.round(p[i] * 100)}%</span></div>`
+    ).join("")
+    : `<div class="dbg-muted">${clf.KIND_NAMES[kind]}: ${r.res.note}</div>`;
+  const topTitle = kind === "rules" ? "Top scores (rules)" : `Top probabilities (${clf.KIND_NAMES[kind]})`;
 
   debugEl.innerHTML =
     `<div class="dbg-title">Debug · ${bestHand.label} hand</div>` +
@@ -356,7 +433,7 @@ function renderDebug() {
     `<span>Index direction</span><b>${Math.round(f.indexTilt)}° ${tiltWord(f.indexTilt)}</b>` +
     `<span>Hand direction</span><b>${Math.round(f.handTilt)}° ${tiltWord(f.handTilt)}</b>` +
     `<span>Palm facing camera</span><b>${fmt(f.palmFacing)}</b>` +
-    `</div><div class="dbg-sub">Top scores (rules)</div>${bars}`;
+    `</div><div class="dbg-sub">${topTitle}</div>${bars}`;
 }
 
 // =============================================================================
@@ -436,11 +513,37 @@ export const signMode = {
       trainImportFile.value = "";
     });
 
+    // Classifier selector + Evaluate window
+    classifierSel = $("signClassifier");
+    clfTag = $("signClfTag");
+    classifierSel.addEventListener("change", () => setClassifier(classifierSel.value));
+    initEvalView();
+    $("signEvalBtn").addEventListener("click", () => { stopRecording(); openEvalView(); });
+
+    // Models section of the Train panel
+    mlpTrainBtn = $("mlpTrainBtn");
+    mlpStatus = $("mlpStatus");
+    mlpAccChart = $("mlpAccChart");
+    mlpLossChart = $("mlpLossChart");
+    knnKInput = $("knnK");
+    knnMetricSel = $("knnMetric");
+    mlpEpochsInput = $("mlpEpochs");
+    knnKInput.value = clf.knnSettings.k;
+    knnMetricSel.value = clf.knnSettings.metric;
+    mlpEpochsInput.value = MLP_DEFAULTS.epochs;
+    const knnChanged = () => clf.setKnnSettings(Number(knnKInput.value), knnMetricSel.value);
+    knnKInput.addEventListener("change", knnChanged);
+    knnMetricSel.addEventListener("change", knnChanged);
+    mlpTrainBtn.addEventListener("click", trainMlp);
+    updateMlpStatus();
+
     setText("");
     // Load the saved dataset in the background.
     dataset.openDataset().then(() => {
+      clf.markDataChanged();
       if (sub === "train") refreshTrainPanel();
     });
+    setClassifier(kind); // restores the last choice (loads the MLP if needed)
   },
 
   enter() {
@@ -457,19 +560,22 @@ export const signMode = {
   },
 
   update(hands, now) {
-    // Classify every visible hand; show the most confident one.
+    // Classify every visible hand with the selected classifier; show the most confident one.
     bestHand = null;
     bestLetter = "";
     bestConf = 0;
+    bestReady = true;
+    bestNote = "";
     for (const hand of hands) {
       const r = handResult(hand.label);
       computeFeatures(hand.pts, r.feat);
-      scoreLetters(r.feat, r.scores);
-      classify(r);
-      if (!bestHand || r.conf > bestConf) {
+      clf.predict(kind, hand, r.feat, r.res);
+      if (!bestHand || r.res.conf > bestConf) {
         bestHand = hand;
-        bestConf = r.conf;
-        bestLetter = r.letter;
+        bestConf = r.res.conf;
+        bestLetter = r.res.letter;
+        bestReady = r.res.ready;
+        bestNote = r.res.note;
       }
     }
 
@@ -488,9 +594,10 @@ export const signMode = {
       locked = false; // a new letter can be accepted
     }
 
-    // Hold-to-accept: the same letter, confident enough, for CFG.holdMs.
+    // Hold-to-accept: the same letter, confident enough (per-classifier
+    // threshold), for CFG.holdMs.
     holdProgress = 0;
-    if (heldLetter && !locked && bestLetter === heldLetter && bestConf >= CFG.acceptConfidence) {
+    if (heldLetter && !locked && bestLetter === heldLetter && bestConf >= clf.THRESHOLDS[kind].accept) {
       holdProgress = Math.min(1, (now - holdStart) / CFG.holdMs);
       if (holdProgress >= 1) {
         accept(heldLetter, now);
@@ -513,9 +620,10 @@ export const signMode = {
       letterEl.classList.toggle("faded", faded);
     }
     const conf = bestLetter ? bestConf : 0;
+    const th = clf.THRESHOLDS[kind];
     confBar.style.transform = `scaleX(${conf.toFixed(3)})`;
-    confBar.dataset.level = conf >= CFG.acceptConfidence ? "high" : conf >= CFG.minConfidence ? "mid" : "low";
-    confText.textContent = bestHand ? `${Math.round(conf * 100)}%` : "no hand";
+    confBar.dataset.level = conf >= th.accept ? "high" : conf >= th.min ? "mid" : "low";
+    confText.textContent = !bestHand ? "no hand" : !bestReady ? bestNote : `${Math.round(conf * 100)}%`;
     holdRing.style.setProperty("--p", holdProgress.toFixed(3));
     holdRing.classList.toggle("done", locked && sub !== "train");
     renderDebug();
@@ -528,7 +636,7 @@ export const signMode = {
   trailColor(hand) { return app.handColors[hand.label]; },
 
   labelSuffix(hand) {
-    return perHand[hand.label]?.letter || "";
+    return perHand[hand.label]?.res.letter || "";
   },
 
   badge() {
@@ -537,6 +645,7 @@ export const signMode = {
   },
 
   onKey(e) {
+    if (isEvalOpen()) return true; // the Evaluate window has the keyboard
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     const key = e.key.toLowerCase();
     // Sub-mode switches work everywhere in Sign mode

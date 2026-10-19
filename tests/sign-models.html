@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Model Tests</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #0b0d12; color: #e6e9f2; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+    h1 { font: 700 18px system-ui, sans-serif; margin: 0 0 8px; }
+    .pass { color: #a3e635; } .fail { color: #f87171; } .muted { color: #8b93a7; }
+  </style>
+</head>
+<body>
+  <h1>Sign mode: k-NN, MLP and evaluation tests (synthetic data)</h1>
+  <p class="muted">Builds a synthetic dataset from the test hand model (19 letters × 2 “signers”, with noise, tilt and both hands),
+    then checks the models and the evaluation pipeline. Saves its test MLP under a separate name, never over your model.
+    Needs internet (TensorFlow.js). Takes ~30-60 s.</p>
+  <pre id="out">Running…</pre>
+  <script type="module">
+    import { packLandmarks, toVector, VECTOR_LENGTH } from "../sign/features.js";
+    import { STATIC_LETTERS } from "../sign/letters.js";
+    import { RULE_LETTERS } from "../sign/rules.js";
+    import { KNN } from "../sign/knn.js";
+    import { loadTF, trainMLP, loadSavedMLP } from "../sign/mlp.js";
+    import { buildMatrix } from "../sign/classifiers.js";
+    import { runEvaluation, splitIndices } from "../sign/evaluate.js";
+    import { SHAPES, ORIENT, rotate, toPx, noisy } from "./synthetic-hands.js";
+
+    const lines = [];
+    let pass = 0, fail = 0;
+    const out = document.getElementById("out");
+    const flush = () => (out.innerHTML = lines.join("\n"));
+    const check = (name, ok, detail = "") => {
+      ok ? pass++ : fail++;
+      const s = `${ok ? "PASS" : "FAIL"} ${name}${detail ? " · " + detail : ""}`;
+      lines.push(`<span class="${ok ? "pass" : "fail"}">${s}</span>`);
+      console.log("TEST " + s);
+      flush();
+    };
+    const info = (s) => { lines.push(`<span class="muted">${s}</span>`); console.log("TEST INFO " + s); flush(); };
+    const D = VECTOR_LENGTH, NC = STATIC_LETTERS.length;
+
+    // Synthetic recordings: per signer and letter, a "take" of consecutive frames.
+    function makeSamples(perLetter = 60) {
+      const samples = [];
+      let t = 0, uid = 0;
+      for (const [signer, tiltBias, noise] of [["ann", -5, 0.02], ["ben", 6, 0.03]]) {
+        for (const L of RULE_LETTERS) {
+          for (let i = 0; i < perLetter; i++) {
+            const left = i % 2 === 1;
+            const tilt = (ORIENT[L] || 0) + tiltBias + (Math.random() * 2 - 1) * 12;
+            const pts = toPx(noisy(rotate(SHAPES[L], tilt), noise, noise * 2.5), {
+              mirror: left, scale: 80 + Math.random() * 60, cx: 250 + Math.random() * 140, cy: 220 + Math.random() * 80,
+            });
+            samples.push({ uid: `s${uid++}`, letter: L, signer, hand: left ? "Left" : "Right", t: (t += 100), lm: packLandmarks(pts) });
+          }
+        }
+      }
+      return samples;
+    }
+
+    try {
+      const samples = makeSamples();
+      info(`synthetic dataset: ${samples.length} samples, ${RULE_LETTERS.length} letters, 2 signers`);
+      const { X, y, n } = buildMatrix(samples);
+      check("feature matrix", X.length === n * D && y.every((c) => c >= 0 && c < NC) && X.every(Number.isFinite));
+
+      // --- Split ---
+      for (const mode of ["random", "time"]) {
+        const sp = splitIndices(samples, mode);
+        const all = new Set([...sp.train, ...sp.test]);
+        const testFrac = sp.test.length / samples.length;
+        const perLetterOk = RULE_LETTERS.every((L) => sp.test.some((i) => samples[i].letter === L));
+        check(`${mode} split: disjoint, complete, ~20%, every letter in test`,
+          all.size === samples.length && sp.train.length + sp.test.length === samples.length && Math.abs(testFrac - 0.2) < 0.02 && perLetterOk,
+          `${sp.train.length} / ${sp.test.length}`);
+      }
+      const t1 = splitIndices(samples, "time");
+      const lastIsTest = RULE_LETTERS.every((L) => ["ann", "ben"].every((s) => {
+        const idx = samples.map((x, i) => i).filter((i) => samples[i].letter === L && samples[i].signer === s);
+        const cut = Math.max(...idx.filter((i) => t1.train.includes(i)).map((i) => samples[i].t));
+        return idx.filter((i) => t1.test.includes(i)).every((i) => samples[i].t > cut);
+      }));
+      check("time-blocked split holds out the LATEST frames", lastIsTest);
+      const r1 = splitIndices(samples, "random", 0.2, 7), r2 = splitIndices(samples, "random", 0.2, 7);
+      check("seeded split is reproducible", r1.test.join() === r2.test.join());
+
+      // --- k-NN ---
+      const sp = splitIndices(samples, "random");
+      const sub = (idx) => { const Xs = new Float32Array(idx.length * D), ys = new Int32Array(idx.length); idx.forEach((r, i) => { Xs.set(X.subarray(r * D, r * D + D), i * D); ys[i] = y[r]; }); return { X: Xs, y: ys, n: idx.length }; };
+      const tr = sub(sp.train), te = sub(sp.test);
+      for (const metric of ["euclidean", "cosine"]) {
+        const knn = new KNN({ k: 5, metric }).fit(tr.X, tr.y, tr.n, D, NC);
+        const probs = new Float32Array(NC);
+        let ok = 0;
+        const t0 = performance.now();
+        for (let i = 0; i < te.n; i++) if (knn.predict(te.X.subarray(i * D, i * D + D), probs).cls === te.y[i]) ok++;
+        const ms = (performance.now() - t0) / te.n;
+        const psum = probs.reduce((a, b) => a + b, 0);
+        check(`k-NN (${metric}) accuracy on held-out synthetic data`, ok / te.n > 0.9, `${Math.round((ok / te.n) * 100)}% · ${ms.toFixed(2)} ms per prediction · probs sum ${psum.toFixed(3)}`);
+      }
+      // Unknown-pose gate: a random non-hand vector should be far from everything.
+      const knn = new KNN({ k: 5 }).fit(X, y, n, D, NC);
+      const junk = new Float32Array(D).map(() => (Math.random() * 2 - 1) * 3);
+      const near = knn.nearestDistance(junk);
+      check("unknown-pose gate lowers confidence for junk input", knn.noveltyGate(near) < 0.6, `gate ${knn.noveltyGate(near).toFixed(2)}`);
+      check("…and leaves real samples alone", knn.noveltyGate(knn.nearestDistance(te.X.subarray(0, D))) === 1);
+
+      // --- MLP ---
+      const tf = await loadTF();
+      check("TensorFlow.js loads on the CPU backend", tf.getBackend() === "cpu", `tfjs ${tf.version.tfjs}`);
+      const losses = [];
+      const t0 = performance.now();
+      const mlp = await trainMLP(tf, tr.X, tr.y, tr.n, D, NC, { epochs: 25, validationSplit: 0.15, onEpoch: (e, l) => losses.push(l) });
+      const trainSec = (performance.now() - t0) / 1000;
+      check("MLP trains: loss decreases", losses.at(-1).loss < losses[0].loss * 0.5,
+        `loss ${losses[0].loss.toFixed(2)} → ${losses.at(-1).loss.toFixed(2)}, val acc ${Math.round(losses.at(-1).val_acc * 100)}%, ${trainSec.toFixed(1)} s for 25 epochs on ${tr.n} samples`);
+      const preds = mlp.predictBatch(te.X, te.n, D);
+      const mlpAcc = preds.reduce((s, p, i) => s + (p === te.y[i]), 0) / te.n;
+      check("MLP accuracy on held-out synthetic data", mlpAcc > 0.9, `${Math.round(mlpAcc * 100)}%`);
+      const probs = new Float32Array(NC);
+      const t2 = performance.now();
+      for (let i = 0; i < 100; i++) mlp.predict(te.X.subarray(0, D), probs);
+      check("MLP single prediction is fast enough for every frame", (performance.now() - t2) / 100 < 5, `${((performance.now() - t2) / 100).toFixed(2)} ms`);
+      check("MLP probabilities sum to 1", Math.abs(probs.reduce((a, b) => a + b, 0) - 1) < 1e-3);
+
+      // Save + reload round trip (separate test location)
+      await mlp.save({ trainedAt: new Date().toISOString(), samples: tr.n }, "indexeddb://handlab-sign-mlp-test");
+      const loaded = await loadSavedMLP(tf, "indexeddb://handlab-sign-mlp-test");
+      const probs2 = new Float32Array(NC);
+      mlp.predict(te.X.subarray(0, D), probs);
+      loaded?.predict(te.X.subarray(0, D), probs2);
+      const same = loaded && probs.every((v, i) => Math.abs(v - probs2[i]) < 1e-5);
+      check("saved model reloads with identical predictions (weights + scaler)", same);
+      mlp.dispose(); loaded?.dispose();
+      await tf.io.removeModel("indexeddb://handlab-sign-mlp-test").catch(() => {});
+
+      // --- Full evaluation pipeline ---
+      const e0 = performance.now();
+      const ev = await runEvaluation(samples, { split: "time", k: 5, metric: "euclidean", epochs: 20, onProgress: () => {} });
+      const evSec = (performance.now() - e0) / 1000;
+      const R = ev.results;
+      const cmTotal = R.mlp.confusion.flat().reduce((a, b) => a + b, 0);
+      check("evaluation runs end to end (time-blocked + leave-one-signer-out)",
+        ev.nTest > 0 && cmTotal === ev.nTest && ev.loso?.rows.length === 2,
+        `${evSec.toFixed(1)} s · Rules ${Math.round(R.rules.acc * 100)}% · k-NN ${Math.round(R.knn.acc * 100)}% · MLP ${Math.round(R.mlp.acc * 100)}% · LOSO mean k-NN ${Math.round(ev.loso.mean.knn * 100)}% / MLP ${Math.round(ev.loso.mean.mlp * 100)}%`);
+      check("confusion matrix rows sum to per-letter totals",
+        R.knn.confusion.every((row, i) => row.reduce((a, b) => a + b, 0) === R.knn.perLetter[i].total));
+    } catch (e) {
+      check("ERROR " + e.stack, false);
+    }
+    lines.push(`<span class="${fail ? "fail" : "pass"}">SUMMARY ${pass} passed, ${fail} failed</span>`);
+    console.log(`TEST SUMMARY ${pass} passed, ${fail} failed`);
+    flush();
+  </script>
+</body>
+</html>

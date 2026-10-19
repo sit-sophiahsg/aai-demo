@@ -113,6 +113,100 @@ Samples are saved in the browser's IndexedDB, so they survive a reload. They're 
 per browser and per site, so clearing site data deletes them. If storage is blocked (e.g. a
 private window), the panel shows "⚠ Not saved: export to keep".
 
+#### Classifiers and evaluation
+
+| Action | How |
+| --- | --- |
+| Choose the classifier | **Classifier** dropdown in the Sign toolbar: Rules / k-NN / MLP (remembered between visits). The letter card shows which one is active |
+| k-NN settings | Train panel → Models: `k` and distance (Euclidean / cosine). Takes effect immediately; nothing to train |
+| Train the MLP | Train panel → Models → **Train MLP**. Shows loss and accuracy per epoch, then saves the model in the browser, so it's there after a reload |
+| Compare all three | **Evaluate** in the Sign toolbar (see the pipeline section below) |
+
+Spell, Practice, the confidence ring and the debug panel work with all three. For k-NN and
+MLP the debug panel shows the **top-4 class probabilities**. Practice offers the letters the
+selected classifier knows: 19 for the rules, and every letter with 10+ samples for the models.
+
+## The sign-language pipeline (data → preprocessing → models → evaluation)
+
+### 1. Data collection (`modes/sign.js` Train, `sign/dataset.js`)
+- **Labelled examples:** one sample = one video frame of one hand making a known letter. It
+  stores the 21 raw landmarks, the letter (the label), the signer and the hand.
+- **Rate and target:** ~10 samples per second while you hold `R`, aiming for 100 per letter
+  across all 24 static letters.
+- **Storage:** saved in IndexedDB. JSON export/import lets several people pool their data, and
+  imports skip duplicates using a unique id per sample.
+- **Signer name:** stored with every sample so we can later test on people the model hasn't seen.
+
+### 2. Preprocessing (`sign/features.js` → `toVector()`)
+The **same** function runs at training time and at prediction time. If those differed, you'd
+get *training/serving skew*.
+1. Translate (wrist → origin) and scale (÷ hand size), so the result doesn't depend on where
+   your hand is or how far away it is.
+2. Mirror left hands into right-hand coordinates, so one model serves both hands.
+3. Keep orientation (no rotation normalisation), because G/H/P/Q depend on it.
+4. 63 coordinates + 22 engineered measurements (finger extension and bend, thumb position,
+   gaps, spreads, orientation) = **85 features**.
+5. **Standardise** each feature (z-score: subtract the mean, divide by the standard deviation,
+   both taken from the training data). Without this, features with large ranges would dominate
+   k-NN distances. The MLP saves its mean/std with the model.
+
+### 3. Models
+| | Rules (`sign/rules.js`) | k-NN (`sign/knn.js`) | MLP (`sign/mlp.js`) |
+| --- | --- | --- | --- |
+| Idea | Hand-written fuzzy conditions per letter | Vote of the *k* most similar recorded samples | Neural network learned from the samples |
+| Training | None (a human wrote them) | None: the data *is* the model | ~10–40 s in the browser (TensorFlow.js) |
+| Letters | 19 | All 24 | All 24 |
+| Confidence | Weakest condition's fuzzy score | Distance-weighted vote share | Softmax probability |
+| Strength | Explainable, no data needed | Simple, adapts instantly to new data | Learns subtle shapes (E/M/N/S/T), compact |
+
+- **k-NN:** standardised Euclidean or cosine distance to every sample. The *k* nearest vote,
+  weighted by 1/distance, so closer neighbours count more.
+- **MLP:** 85 → Dense 64 (ReLU) → Dropout 0.3 → Dense 64 (ReLU) → Dropout 0.3 → 24 softmax.
+  It uses Adam (learning rate 0.003) and categorical cross-entropy. Data is shuffled *before*
+  the 15% validation split, because TF.js takes the *last* rows as validation, and those would
+  otherwise be just the last few letters.
+- **CPU backend:** TF.js runs on the CPU on purpose. MediaPipe already uses the GPU, and this
+  ~11k-weight network takes ~0.2 ms per prediction on the CPU.
+- **Unknown-pose gate:** the models always pick *some* letter, even for a relaxed hand. If the
+  current hand is much farther from every training sample than samples normally are from each
+  other (2 × the 95th-percentile nearest-neighbour distance), confidence is scaled down.
+  Without the gate, a hand at rest would type letters.
+- **Thresholds per classifier** (fuzzy scores and probabilities aren't on the same scale):
+
+  | Classifier | Shown at | Typed at |
+  | --- | --- | --- |
+  | Rules | 0.55 | 0.65 |
+  | k-NN | 0.5 | 0.7 |
+  | MLP | 0.5 | 0.8 |
+
+### 4. Evaluation (`sign/evaluate.js`, **Evaluate** button)
+- **80/20 split,** stratified so every letter keeps ~20% for testing. The split is seeded, so
+  it's reproducible. k-NN and a *fresh* MLP see only the 80%, so evaluation never overwrites
+  your deployed model.
+  - **Random:** shuffle each letter's frames. Neighbouring frames are nearly identical, so test
+    frames have near-twins in training and **accuracy is optimistic**.
+  - **Time-blocked:** hold out the *last* 20% of each signer's recording of each letter. That's
+    closer to "a new attempt" and is the more honest single-person estimate.
+- **Metrics:**
+  - Overall accuracy, and accuracy on the 19 rule letters. The second is fairer to the rules,
+    which can't do E, M, N, S or T.
+  - Per-letter accuracy for all three classifiers side by side.
+  - A **confusion matrix** (rows = true letter, columns = prediction, ∅ = no confident answer)
+    with a list of the most common mistakes.
+- **Leave-one-signer-out** (2+ signers): train on everyone else, test on one person, repeat for
+  each person. This measures **generalisation to new people**, usually the lowest and most
+  important number. With only your own data, the model may be learning *your* hand.
+- **What to expect:** random split > time-blocked > leave-one-signer-out. Big gaps between them
+  are a sign of overfitting to individual recordings or people, and a good thing to discuss in
+  a presentation.
+
+### Testing the pipeline
+`tests/sign-models.html` builds a synthetic dataset from a 3D hand model (19 letters × 2
+"signers", with noise, tilt and both hands) and checks the split, k-NN, MLP training,
+save/reload and the full evaluation (17 checks). On this idealised data all three score highly
+(Rules ~72–95%, k-NN and MLP ~99–100%), so it shows the pipeline is *correct*. Real-world
+accuracy must be measured on your recordings with **Evaluate**.
+
 The top-right corner shows the active delegate (hover it to see the WebGL renderer),
 the camera resolution, model inference time and FPS.
 
@@ -226,8 +320,15 @@ the camera resolution, model inference time and FPS.
 | `sign/rules.js` | Rule-based classifier: `CFG` thresholds and fuzzy letter rules |
 | `sign/letters.js` | Letter sets (19 rule letters, 24 static letters) and handshape descriptions |
 | `sign/dataset.js` | Recorded samples: IndexedDB storage, JSON export/import, counts |
+| `sign/knn.js` | k-NN classifier, z-score scaler (shared with the MLP), unknown-pose gate |
+| `sign/mlp.js` | TF.js MLP: lazy loading, training, save/load (IndexedDB), prediction |
+| `sign/classifiers.js` | One `predict()` interface over Rules / k-NN / MLP, per-classifier thresholds, the deployed models |
+| `sign/evaluate.js` | Splits (random / time-blocked), metrics, confusion matrix, leave-one-signer-out |
+| `sign/eval-view.js` | The Evaluate window |
+| `sign/charts.js` | Training-curve line charts and the confusion-matrix heatmap |
 | `tests/sign-rules.html` | Synthetic tests for the rules (clean, tilted, mirrored, noisy) |
 | `tests/sign-data.html` | Tests for preprocessing invariances and the dataset store (separate test database) |
+| `tests/sign-models.html` | Tests for the split, k-NN, MLP training/save/reload and the evaluation pipeline |
 | `tests/synthetic-hands.js` | Tiny 3D hand model used by the tests |
 | `serve.ps1` | Tiny static server for Windows |
 
@@ -235,5 +336,7 @@ Every mode exports the same interface (`init`, `enter`, `exit`, `update`, `rende
 `handLost`, `trailColor`, `labelSuffix`, `badge`, `onKey`, optional `onKeyUp`). `main.js`
 only calls the **active** mode, so Draw poses can't draw while you're in Game or Sign mode.
 
-**Tests:** with the server running, open `http://localhost:8000/tests/sign-rules.html` or
-`http://localhost:8000/tests/sign-data.html`. Results appear on the page.
+**Tests:** with the server running, open `http://localhost:8000/tests/sign-rules.html`,
+`http://localhost:8000/tests/sign-data.html` or `http://localhost:8000/tests/sign-models.html`.
+Results appear on the page. Keep the models test tab in the foreground while it runs:
+browsers slow down timers in background tabs, which makes TF.js training crawl.

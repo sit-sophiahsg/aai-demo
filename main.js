@@ -210,8 +210,12 @@ document.querySelectorAll(".mode-tab").forEach((b) =>
 );
 
 window.addEventListener("keydown", (e) => {
-  // Don't steal keys while typing in a text field.
-  if (e.target instanceof HTMLInputElement && e.target.type === "text") return;
+  // Don't steal keys while typing in a form field (text, number, select…),
+  // or while a modal window (e.g. Sign > Evaluate) is open.
+  const t = e.target;
+  if (t instanceof Element && t.closest("input, select, textarea") &&
+    !(t instanceof HTMLInputElement && (t.type === "checkbox" || t.type === "range"))) return;
+  if (document.querySelector(".modal:not([hidden])")) return;
   // 1 / 2 / 3 switch modes (no modifiers: Shift+digits belong to the mode).
   if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && MODE_KEYS[e.code]) {
     setMode(MODE_KEYS[e.code]);

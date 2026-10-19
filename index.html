@@ -73,6 +73,15 @@
           <button id="signClearBtn" class="btn" title="Clear text (C)">Clear <kbd>C</kbd></button>
         </span>
         <button id="practiceNextBtn" class="btn" title="Skip to the next letter (N)" hidden>Skip <kbd>N</kbd></button>
+        <label class="slider" title="Which classifier recognises the letters">
+          <span>Classifier</span>
+          <select id="signClassifier" class="select">
+            <option value="rules">Rules</option>
+            <option value="knn">k-NN</option>
+            <option value="mlp">MLP</option>
+          </select>
+        </label>
+        <button id="signEvalBtn" class="btn" title="Compare Rules, k-NN and MLP on held-out data">Evaluate</button>
         <label class="toggle" title="Show finger states, angles and letter scores (D)">
           <input id="signDebugToggle" type="checkbox" />
           <span>Debug <kbd>D</kbd></span>
@@ -153,6 +162,7 @@
             <div class="conf-bar"><div id="signConfBar" data-level="low"></div></div>
             <span id="signConfText">no hand</span>
           </div>
+          <div id="signClfTag" class="clf-tag">Rules</div>
         </div>
 
         <div id="signPractice" class="practice-card" hidden>
@@ -212,6 +222,25 @@
 
       <div class="sp-sub">Samples per signer</div>
       <div id="trainSigners" class="sp-signers"></div>
+
+      <div class="sp-sub">Models</div>
+      <div class="sp-inline">
+        <label>k-NN <i>k</i> <input id="knnK" type="number" min="1" max="25" value="5" /></label>
+        <label>Distance
+          <select id="knnMetric" class="select">
+            <option value="euclidean">Euclidean</option>
+            <option value="cosine">Cosine</option>
+          </select>
+        </label>
+      </div>
+      <div class="sp-muted">k-NN uses every sample directly. Nothing to train.</div>
+      <div class="sp-inline">
+        <label>MLP epochs <input id="mlpEpochs" type="number" min="5" max="200" value="40" /></label>
+        <button id="mlpTrainBtn" class="btn primary">Train MLP</button>
+      </div>
+      <div id="mlpStatus" class="sp-status"></div>
+      <div id="mlpAccChart"></div>
+      <div id="mlpLossChart"></div>
     </aside>
   </main>
 
@@ -237,6 +266,42 @@
       <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> modes · <kbd>T</kbd> trails · <kbd>S</kbd> skeleton</span>
     </div>
   </footer>
+
+  <!-- Sign > Evaluate: Rules vs k-NN vs MLP on held-out data (sign/eval-view.js) -->
+  <div id="evalModal" class="modal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="evalTitle">
+      <div class="modal-head">
+        <h2 id="evalTitle">Evaluate classifiers</h2>
+        <span id="evalData" class="muted-text"></span>
+        <button id="evalClose" class="btn">Close <kbd>Esc</kbd></button>
+      </div>
+      <div class="ev-controls">
+        <label>Split
+          <select id="evalSplit" class="select">
+            <option value="random">Random 80/20</option>
+            <option value="time">Time-blocked 80/20</option>
+          </select>
+        </label>
+        <label>k <input id="evalK" type="number" min="1" max="25" value="5" /></label>
+        <label>Distance
+          <select id="evalMetric" class="select">
+            <option value="euclidean">Euclidean</option>
+            <option value="cosine">Cosine</option>
+          </select>
+        </label>
+        <label>MLP epochs <input id="evalEpochs" type="number" min="5" max="200" value="40" /></label>
+        <button id="evalRun" class="btn primary">Run evaluation</button>
+        <span id="evalStatus" class="muted-text"></span>
+      </div>
+      <p class="ev-caption">
+        <b>Random</b> mixes neighbouring, nearly identical frames into both train and test, so it
+        overestimates accuracy. <b>Time-blocked</b> holds out the last 20% of each recording, which
+        is closer to a fresh attempt. <b>Leave-one-signer-out</b> (2+ signers) tests on people the
+        model has never seen.
+      </p>
+      <div id="evalResults" class="ev-results"></div>
+    </div>
+  </div>
 
   <!-- type="module" lets main.js use `import` (CDN + our own modules) -->
   <script type="module" src="main.js"></script>
