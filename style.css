@@ -150,6 +150,7 @@ kbd {
   cursor: pointer;
 }
 .icon-btn:hover { border-color: var(--accent); }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border-btn); }
 
 /* Segmented control (mode tabs, sub-modes, classifier, eval tabs) */
 .segmented {

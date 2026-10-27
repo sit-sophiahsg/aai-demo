@@ -170,6 +170,7 @@ function setMode(id) {
   document.querySelectorAll("[data-for]").forEach((el) => (el.hidden = el.dataset.for !== id));
   shownHands = null; // re-evaluate the empty state for this mode
   updateStageChips();
+  updateFullscreenAllowed();
   fitStage();
   console.info(`[HandLab] Mode: ${next.name}`);
 }
@@ -267,9 +268,19 @@ function setFullscreenLayout(on) {
 }
 function toggleFullscreen() {
   const on = !document.body.classList.contains("fullscreen");
+  if (on && fullscreenBtn.disabled) return;
   setFullscreenLayout(on);
   if (on) document.documentElement.requestFullscreen?.().catch(() => {});
   else if (document.fullscreenElement) document.exitFullscreen();
+}
+// A mode can turn full screen off (Sign only allows it in Spell). Called on
+// mode and sub-mode changes; leaves full screen if it's no longer allowed.
+function updateFullscreenAllowed() {
+  const allowed = activeMode.allowsFullscreen?.() ?? true;
+  if (!allowed && document.body.classList.contains("fullscreen")) toggleFullscreen();
+  fullscreenBtn.disabled = !allowed;
+  if (!allowed) fullscreenBtn.title = "Full screen is only available in Spell";
+  else if (!document.body.classList.contains("fullscreen")) fullscreenBtn.title = "Full screen (F)";
 }
 fullscreenBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", () => {
@@ -723,6 +734,7 @@ const app = {
   overlay, octx, drawCanvas, particles, pxScale,
   fxQuality: () => fxQuality, // 0.25..1, modes scale their effects by it
   refit: fitStage,            // call after showing/hiding something next to the video
+  updateFullscreen: updateFullscreenAllowed, // call when allowsFullscreen() may have changed
   handColors: HAND_COLORS,
   drawHoldRing, drawCenterText,
 };

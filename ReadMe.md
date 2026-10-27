@@ -39,7 +39,7 @@ library, WASM runtime and model load from jsDelivr and Google.
     more and amber below. `FX nn%` appears in the chip while particle effects are being reduced.
     Hover the chip for the model's inference time and the WebGL renderer.
   - The `?` button (or the `?` key) opens a help window with instructions for each mode.
-  - The full-screen button (or `F`) makes the camera fill the window in every mode.
+  - The full-screen button (or `F`) makes the camera fill the window. In Sign mode it's only available in Spell; switching to Practice or Train leaves full screen.
 - **Video:** in the top corners are a live **state chip** (Draw: `DRAWING` / `HOVER` / `IDLE`;
   Game: the game state; Sign: `LETTER A`, or `DRAWING J` / `DRAWING Z`; `NO HAND` when no hand
   is visible), the detected hand and a `Mirrored` chip. With no hand in view, a short hint in

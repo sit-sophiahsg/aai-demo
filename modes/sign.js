@@ -222,6 +222,7 @@ function setSub(next) {
   textEl.parentElement.hidden = sub !== "spell";
   trainPanel.hidden = sub !== "train";
   app.refit(); // the train side panel changes the space available for the video
+  app.updateFullscreen(); // full screen is for Spell only
   if (sub === "practice") {
     practiceOrder = shuffle([...clf.practiceLetters(kind), ...MOTION_LETTERS]);
     practiceIdx = 0;
@@ -450,6 +451,11 @@ function renderDebug() {
 export const signMode = {
   id: "sign",
   name: "Sign",
+
+  // Practice and Train need the side panel, so only Spell can go full screen.
+  allowsFullscreen() {
+    return sub === "spell";
+  },
 
   init(ctx) {
     app = ctx;
