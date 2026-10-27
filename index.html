@@ -54,8 +54,7 @@
       <button id="fullscreenBtn" class="icon-btn" type="button" aria-label="Full screen (F)" title="Full screen (F)" aria-pressed="false">
         <svg class="icon"><use href="#i-expand" /></svg>
       </button>
-      <!-- Reserved for the onboarding tutorial (Phase 4) -->
-      <button id="helpBtn" class="icon-btn" type="button" aria-label="Show tutorial" title="Show tutorial">?</button>
+      <button id="helpBtn" class="icon-btn" type="button" aria-label="How to use (?)" title="How to use (?)">?</button>
     </div>
   </header>
 
@@ -351,6 +350,86 @@
       </div>
     </aside>
   </main>
+
+  <!-- Help (? button / ? key): how to use each mode (main.js) -->
+  <div id="helpModal" class="modal" hidden>
+    <div class="modal-panel help-panel" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal-head">
+        <h2 id="helpTitle">How to use Hand Lab</h2>
+        <button id="helpClose" class="btn">Close<kbd>Esc</kbd></button>
+      </div>
+
+      <section class="help-section">
+        <h3 class="card-label">Getting started</h3>
+        <ol class="help-list">
+          <li>Allow camera access when the browser asks.</li>
+          <li>Hold your hand about an arm&rsquo;s length from the camera, in good light, palm facing the screen.</li>
+          <li>Pick a mode with the tabs at the top, or press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>.</li>
+        </ol>
+      </section>
+
+      <section class="help-section">
+        <h3 class="card-label">Everywhere</h3>
+        <div class="help-rows">
+          <div><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></div><span>Switch to Draw, Game or Sign</span>
+          <div><kbd>F</kbd></div><span>Full screen camera (works in every mode)</span>
+          <div><kbd>S</kbd></div><span>Show or hide the hand skeleton</span>
+          <div><kbd>T</kbd></div><span>Particle trails on or off (Draw and Game)</span>
+          <div><kbd>?</kbd></div><span>Open this help</span>
+        </div>
+      </section>
+
+      <div class="segmented full" role="tablist" aria-label="Help topic">
+        <button class="seg" data-help="draw" role="tab">Draw</button>
+        <button class="seg" data-help="game" role="tab">Game</button>
+        <button class="seg" data-help="sign" role="tab">Sign</button>
+      </div>
+
+      <section class="help-section" data-help-for="draw">
+        <h3 class="card-label">Draw: air drawing</h3>
+        <div class="help-rows">
+          <div><span class="tag">Index finger up</span></div><span>Draw with your fingertip</span>
+          <div><span class="tag">Index + middle up</span></div><span>Lift the pen and move without drawing</span>
+          <div><span class="tag">Any other pose</span></div><span>Nothing happens</span>
+          <div><kbd>U</kbd> <kbd>Ctrl+Z</kbd></div><span>Undo the last stroke</span>
+          <div><kbd>C</kbd></div><span>Clear the drawing</span>
+          <div><kbd>Shift+1</kbd>&ndash;<kbd>6</kbd></div><span>Pick a brush colour</span>
+          <div><kbd>[</kbd> <kbd>]</kbd></div><span>Smaller or bigger brush</span>
+        </div>
+        <p class="muted small">Optional: turn on <b>Palm-hold clears canvas</b>, then hold a wide-open hand still for 1.5 s to clear.</p>
+      </section>
+
+      <section class="help-section" data-help-for="game" hidden>
+        <h3 class="card-label">Game: Bubble Pop</h3>
+        <div class="help-rows">
+          <div><span class="tag">Open palm 1 s</span></div><span>Start or restart a round (or press <kbd>Space</kbd>)</span>
+          <div><span class="tag">Fingertip</span></div><span>Touch a bubble to pop it, with either hand</span>
+          <div><span class="bubble normal" aria-hidden="true"></span></div><span>Normal bubble: +10 to +20 (smaller is worth more)</span>
+          <div><span class="bubble gold" aria-hidden="true"></span></div><span>Gold bubble: +50</span>
+          <div><span class="bubble bomb" aria-hidden="true"></span></div><span>Bomb: &minus;30 and your combo resets</span>
+        </div>
+        <p class="muted small">Rounds last 60 s. Pops within 1 s of each other build a combo, up to x5. Put your hand down after game over before starting again.</p>
+      </section>
+
+      <section class="help-section" data-help-for="sign" hidden>
+        <h3 class="card-label">Sign: ASL fingerspelling</h3>
+        <div class="help-rows">
+          <div><span class="tag">Hold 0.8 s</span></div><span>Type the letter. The inner ring fills while you hold</span>
+          <div><span class="tag">Drop hand</span></div><span>Lets you type the same letter twice</span>
+          <div><kbd>Space</kbd> <kbd>Backspace</kbd> <kbd>C</kbd></div><span>Space, delete, clear the typed text</span>
+          <div><kbd>P</kbd></div><span>Practice: make the shown letter, <kbd>N</kbd> skips</span>
+          <div><kbd>T</kbd></div><span>Train: record your own samples (hold <kbd>R</kbd>, <kbd>&larr;</kbd> <kbd>&rarr;</kbd> change letter)</span>
+          <div><kbd>D</kbd></div><span>Debug panel with finger states and letter scores</span>
+        </div>
+        <ul class="help-list">
+          <li>The outer ring shows confidence: grey = no letter, amber = unsure, green = will type.</li>
+          <li><b>J</b>: make an I and draw a hook with your little finger. <b>Z</b>: point and draw a Z in the air. Start moving within about 0.8 s.</li>
+          <li><b>G</b> and <b>H</b> point sideways, <b>P</b> and <b>Q</b> point down.</li>
+          <li><b>Rules</b> knows 19 letters. Record samples in Train, then switch to <b>k-NN</b> or <b>MLP</b> for all 24 static letters.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
 
   <!-- Sign > Evaluate: Rules vs k-NN vs MLP on held-out data (sign/eval-view.js) -->
   <div id="evalModal" class="modal" hidden>

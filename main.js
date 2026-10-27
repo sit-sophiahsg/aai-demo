@@ -248,7 +248,8 @@ window.addEventListener("keydown", (e) => {
   if (activeMode.onKey(e)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key.toLowerCase();
-  if (key === "f") toggleFullscreen();
+  if (e.key === "?") openHelp();
+  else if (key === "f") toggleFullscreen();
   else if (key === "s") skeletonToggle.checked = !skeletonToggle.checked;
   else if (key === "t") trailsToggle.checked = !trailsToggle.checked;
 });
@@ -273,6 +274,31 @@ function toggleFullscreen() {
 fullscreenBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement) setFullscreenLayout(false);
+});
+
+// Help window (? button / ? key). Opens on the current mode's instructions.
+const helpModal = $("helpModal");
+function showHelpTopic(id) {
+  helpModal.querySelectorAll("[data-help]").forEach((b) => b.classList.toggle("active", b.dataset.help === id));
+  helpModal.querySelectorAll("[data-help-for]").forEach((el) => (el.hidden = el.dataset.helpFor !== id));
+}
+function openHelp() {
+  showHelpTopic(activeMode.id);
+  helpModal.hidden = false;
+  $("helpClose").focus();
+}
+function closeHelp() {
+  helpModal.hidden = true;
+}
+$("helpBtn").addEventListener("click", openHelp);
+$("helpClose").addEventListener("click", closeHelp);
+helpModal.addEventListener("click", (e) => {
+  if (e.target === helpModal) closeHelp();
+  const tab = e.target.closest("[data-help]");
+  if (tab) showHelpTopic(tab.dataset.help);
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !helpModal.hidden) closeHelp();
 });
 
 // Key releases matter for "hold a key" actions (e.g. hold R to record in Sign mode).

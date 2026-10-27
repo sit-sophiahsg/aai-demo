@@ -471,7 +471,7 @@ body.fullscreen #stage { border-radius: 12px; }
   background: var(--panel);
   color: var(--text-2);
 }
-.legend-item .tag {
+.legend-item .tag, .help-rows .tag {
   font: 600 11px var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -805,6 +805,20 @@ body.fullscreen #stage { border-radius: 12px; }
 .cm-cell { aspect-ratio: 1; min-height: 12px; border-radius: 2px; background: rgba(var(--heat), calc(0.06 + var(--v) * 0.94)); }
 .cm-cell.diag { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
 .cm-cell:hover { outline: 2px solid var(--text); outline-offset: -1px; }
+
+/* ---------- Help window ---------- */
+.help-panel { width: min(680px, 100%); display: flex; flex-direction: column; gap: 18px; }
+.help-section { display: flex; flex-direction: column; gap: 10px; }
+.help-rows {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: 8px 16px;
+  align-items: center;
+  color: var(--text-2);
+}
+.help-rows > div { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.help-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--text-2); }
+.help-panel b { color: var(--text); }
 
 /* ---------- Evaluate window ---------- */
 .modal {
