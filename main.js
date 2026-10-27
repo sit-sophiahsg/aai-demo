@@ -248,8 +248,31 @@ window.addEventListener("keydown", (e) => {
   if (activeMode.onKey(e)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key.toLowerCase();
-  if (key === "s") skeletonToggle.checked = !skeletonToggle.checked;
+  if (key === "f") toggleFullscreen();
+  else if (key === "s") skeletonToggle.checked = !skeletonToggle.checked;
   else if (key === "t") trailsToggle.checked = !trailsToggle.checked;
+});
+
+// Full screen: a CSS layout (body.fullscreen) plus the browser's Fullscreen API
+// where available. Browsers without it (e.g. iPhone Safari) still get the
+// layout, which fills the window. Esc / browser exit also turns the layout off.
+const fullscreenBtn = $("fullscreenBtn");
+function setFullscreenLayout(on) {
+  document.body.classList.toggle("fullscreen", on);
+  fullscreenBtn.setAttribute("aria-pressed", on);
+  fullscreenBtn.querySelector("use").setAttribute("href", on ? "#i-shrink" : "#i-expand");
+  fullscreenBtn.title = on ? "Exit full screen (F)" : "Full screen (F)";
+  fitStage();
+}
+function toggleFullscreen() {
+  const on = !document.body.classList.contains("fullscreen");
+  setFullscreenLayout(on);
+  if (on) document.documentElement.requestFullscreen?.().catch(() => {});
+  else if (document.fullscreenElement) document.exitFullscreen();
+}
+fullscreenBtn.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement) setFullscreenLayout(false);
 });
 
 // Key releases matter for "hold a key" actions (e.g. hold R to record in Sign mode).

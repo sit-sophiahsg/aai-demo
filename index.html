@@ -22,6 +22,8 @@
       <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16v-5" /><path d="M12 16V8" /><path d="M17 16v-3" /></symbol>
       <symbol id="i-skip" viewBox="0 0 24 24"><path d="m6 4 10 8-10 8z" /><path d="M19 5v14" /></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></symbol>
+      <symbol id="i-shrink" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9" /><path d="m7 14 5-5 5 5" /><path d="M5 3h14" /></symbol>
     </defs>
   </svg>
@@ -48,6 +50,10 @@
         <span id="statusDot" class="dot"></span>
         <span id="statusText" class="mono">starting…</span>
       </div>
+      <!-- Full screen: camera fills the window in every mode (main.js) -->
+      <button id="fullscreenBtn" class="icon-btn" type="button" aria-label="Full screen (F)" title="Full screen (F)" aria-pressed="false">
+        <svg class="icon"><use href="#i-expand" /></svg>
+      </button>
       <!-- Reserved for the onboarding tutorial (Phase 4) -->
       <button id="helpBtn" class="icon-btn" type="button" aria-label="Show tutorial" title="Show tutorial">?</button>
     </div>

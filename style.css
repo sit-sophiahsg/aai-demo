@@ -378,6 +378,16 @@ input[type="range"] { width: 100%; height: 32px; margin: 0; accent-color: var(--
 #video { transform: scaleX(-1); object-fit: cover; }
 /* Strokes only show in Draw mode (they're kept, just hidden) */
 body:not([data-mode="draw"]) #drawCanvas { visibility: hidden; }
+/* Full screen (F): header stays for switching modes; the camera takes the
+   rest of the window and the side panel + legend are hidden. */
+body.fullscreen { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+body.fullscreen .brand-text { display: none; }
+body.fullscreen .app-main { flex: 1; min-height: 0; flex-wrap: nowrap; padding: 0 8px 8px; }
+body.fullscreen .stage-col { min-height: 0; }
+body.fullscreen .side-panel,
+body.fullscreen .legend { display: none; }
+body.fullscreen #stage { border-radius: 12px; }
+#fullscreenBtn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 /* Red frame while recording training samples */
 #stage.recording { box-shadow: 0 0 0 3px var(--danger); }
 
