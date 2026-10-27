@@ -88,6 +88,12 @@
             <p>Keep it about an arm's length from the camera, in good light, palm facing the screen.</p>
           </div>
 
+          <!-- Sign > Spell: current letter + typed text in the middle of the video (modes/sign.js) -->
+          <div id="spellOverlay" class="spell-overlay">
+            <div id="spellOverlayLetter" class="spell-overlay-letter mono" data-level="low">?</div>
+            <div class="spell-overlay-text mono"><span id="spellOverlayText"></span><span class="caret"></span></div>
+          </div>
+
           <!-- Game: score / time / combo during a round + the start / countdown / game-over card (modes/game.js) -->
           <div class="game-layer" data-for="game" hidden>
             <div id="gameHud" class="game-hud" hidden>

@@ -458,6 +458,48 @@ body.fullscreen #stage { border-radius: 12px; }
 .empty-state h2 { font-size: 17px; font-weight: 600; }
 .empty-state p { color: var(--text-2); font-size: 13px; }
 
+/* Sign > Spell: letter + typed text over the middle of the video. Only in
+   Sign mode, and it gives way to the "raise your hand" hint. */
+.spell-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  max-width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+body:not([data-mode="sign"]) .spell-overlay,
+#emptyState:not([hidden]) ~ .spell-overlay { display: none; }
+.spell-overlay-letter {
+  font-size: 96px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.8);
+}
+.spell-overlay-letter[data-level="mid"] { color: var(--warning); }
+.spell-overlay-letter[data-level="high"] { color: var(--success); }
+.spell-overlay-text {
+  max-width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* newest letters stay visible */
+  overflow: hidden;
+  padding: 6px 16px;
+  border-radius: var(--r-btn-lg);
+  background: var(--chip-bg);
+  font-size: 28px;
+  font-weight: 600;
+  white-space: pre;
+}
+.spell-overlay-text .caret { height: 28px; }
+
 /* Gesture legend under the video */
 .legend { display: flex; flex-wrap: wrap; gap: 10px; }
 .legend-item {
@@ -932,4 +974,6 @@ body.fullscreen #stage { border-radius: 12px; }
   .game-screen { padding: 12px 14px; }
   .game-screen h2 { font-size: 22px; }
   .game-screen p { font-size: 12px; line-height: 1.45; }
+  .spell-overlay-letter { font-size: 64px; }
+  .spell-overlay-text { min-height: 36px; font-size: 20px; }
 }

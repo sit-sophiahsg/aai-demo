@@ -71,6 +71,7 @@ let noHandWarned = false;
 
 // DOM
 let letterEl, letterCard, confBar, confText, holdRing, textEl, stageEl;
+let overlayEl, overlayLetterEl, overlayTextEl; // Spell: letter + text on the video
 let practiceEl, practiceLetterEl, practiceDescEl, practiceScoreEl, practiceTickEl, practiceNote;
 let debugEl, spellBtn, practiceBtn, trainBtn, nextBtn, debugToggle, spellControls;
 let trainPanel, trainLetterEl, trainDescEl, trainGrid, trainStatus, trainSigner, trainSigners,
@@ -182,7 +183,7 @@ function accept(letter, now) {
 
 function setText(t) {
   text = t.slice(-80);
-  if (shown.text !== text) textEl.textContent = shown.text = text;
+  if (shown.text !== text) textEl.textContent = overlayTextEl.textContent = shown.text = text;
 }
 
 function shuffle(a) {
@@ -220,6 +221,7 @@ function setSub(next) {
   nextBtn.hidden = sub !== "practice";
   spellControls.hidden = sub !== "spell";
   textEl.parentElement.hidden = sub !== "spell";
+  overlayEl.hidden = sub !== "spell";
   trainPanel.hidden = sub !== "train";
   app.refit(); // the train side panel changes the space available for the video
   app.updateFullscreen(); // full screen is for Spell only
@@ -466,6 +468,9 @@ export const signMode = {
     confText = $("signConfText");
     holdRing = $("signHoldRing");
     textEl = $("signText");
+    overlayEl = $("spellOverlay");
+    overlayLetterEl = $("spellOverlayLetter");
+    overlayTextEl = $("spellOverlayText");
     stageEl = $("stage");
     practiceEl = $("signPractice");
     practiceLetterEl = $("practiceLetter");
@@ -660,13 +665,15 @@ export const signMode = {
     if (shown.letter !== show || shown.faded !== faded) {
       shown.letter = show;
       shown.faded = faded;
-      letterEl.textContent = show;
+      letterEl.textContent = overlayLetterEl.textContent = show;
       letterEl.classList.toggle("faded", faded);
     }
     const conf = bestLetter ? bestConf : 0;
     const th = clf.THRESHOLDS[kind];
+    const level = conf >= th.accept ? "high" : conf >= th.min ? "mid" : "low";
     confBar.style.setProperty("--c", conf.toFixed(3)); // the outer ring arc
-    confBar.dataset.level = conf >= th.accept ? "high" : conf >= th.min ? "mid" : "low";
+    confBar.dataset.level = level;
+    overlayLetterEl.dataset.level = faded ? "low" : level;
     confText.textContent = !bestHand ? "no hand" : drawing ? "drawing…" : !bestReady ? bestNote : `${Math.round(conf * 100)}%`;
     holdRing.style.setProperty("--p", holdProgress.toFixed(3));
     holdRing.classList.toggle("done", locked && sub !== "train");
